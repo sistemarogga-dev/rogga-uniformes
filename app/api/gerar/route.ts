@@ -194,13 +194,21 @@ export async function POST(request: Request) {
       return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
     }
 
-    // Redimensionar para 1080x1920 (9:16)
+    // Etapa 1: Ajustar para 1080x1920 (9:16)
     const resized = await sharp(imageBuffer)
       .resize(1080, 1920, { fit: "cover", position: "center" })
-      .png()
       .toBuffer();
 
-    const url = `data:image/png;base64,${resized.toString("base64")}`;
+    // Etapa 2: Upscale 2x → 2160x3840 (alta resolução para impressão)
+    const upscaled = await sharp(resized)
+      .resize(2160, 3840, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3, // melhor algoritmo de upscale
+      })
+      .png({ compressionLevel: 6, quality: 100 })
+      .toBuffer();
+
+    const url = `data:image/png;base64,${upscaled.toString("base64")}`;
 
     return Response.json({ url, prompt: editPrompt, logoAnalysis });
   } catch (err: unknown) {
