@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-rogga-red: #C8102E;
+  --color-rogga-dark: #1a1a2e;
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
