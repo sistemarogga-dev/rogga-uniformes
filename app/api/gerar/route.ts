@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       prompt: promptFinal,
       n: 1,
       size: "1024x1024",
-      quality: "standard",
+      quality: "high",
     });
 
     // gpt-image-1 returns base64, dall-e-3 returns url
