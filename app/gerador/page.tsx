@@ -99,14 +99,21 @@ export default function GeradorPage() {
 
   const baixarImagem = useCallback(async (url: string, index: number) => {
     try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = blobUrl;
       a.download = `rogga-arte-${index + 1}.png`;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
+      if (url.startsWith("data:")) {
+        // base64 — link direto
+        a.href = url;
+        a.click();
+      } else {
+        // URL externa — fetch + blob
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      }
     } catch {
       setErro("Erro ao baixar a imagem. Tente clique direito > Salvar imagem.");
     }
