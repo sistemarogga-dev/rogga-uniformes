@@ -139,7 +139,7 @@ export async function POST(request: Request) {
       model: "gpt-image-1",
       prompt,
       n: 1,
-      size: "1024x1792",
+      size: "1024x1536",
       quality: "high",
     });
 
