@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
-  Upload, Download, ChevronLeft, Loader2, Image as ImageIcon,
+  Upload, Download, ChevronLeft, Loader2,
   AlertCircle, CheckCircle2, X, Sparkles, User, Building2,
 } from "lucide-react";
 
@@ -334,11 +334,15 @@ export default function GeradorPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-            {imagemAtual ? (
-              <div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imagemAtual.url} alt="Arte gerada" className="w-full object-contain max-h-[600px]" />
-                <div className="p-4 space-y-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imagemAtual ? imagemAtual.url : "/template.png"}
+              alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
+              className="w-full object-contain max-h-[600px]"
+            />
+            <div className="p-4 space-y-3">
+              {imagemAtual ? (
+                <>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-semibold text-gray-800 text-sm">{imagemAtual.cliente}</p>
@@ -360,16 +364,13 @@ export default function GeradorPage() {
                   {showPrompt && (
                     <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 leading-relaxed">{imagemAtual.prompt}</p>
                   )}
-                </div>
-              </div>
-            ) : (
-              <div className="aspect-[9/16] max-h-[600px] flex flex-col items-center justify-center text-gray-300 gap-4 p-8">
-                <ImageIcon size={64} strokeWidth={1} />
-                <p className="text-sm text-center text-gray-400">
-                  Preencha o formulário ao lado e clique em <strong className="text-gray-500">Gerar Arte</strong>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 text-center">
+                  Template padrão — preencha o formulário e clique em <strong className="text-gray-600">Gerar Arte</strong>
                 </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Histórico */}
