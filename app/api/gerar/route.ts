@@ -21,14 +21,21 @@ export async function POST(request: Request) {
     const promptFinal = `${prefixo} ${prompt}. Estilo: profissional, empresarial, ROGGA UNIFORMES.`;
 
     const response = await openai.images.generate({
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: promptFinal,
       n: 1,
       size: "1024x1024",
       quality: "standard",
     });
 
-    const url = response.data?.[0]?.url;
+    // gpt-image-1 returns base64, dall-e-3 returns url
+    const item = response.data?.[0];
+    let url: string | undefined;
+    if (item?.url) {
+      url = item.url;
+    } else if (item?.b64_json) {
+      url = `data:image/png;base64,${item.b64_json}`;
+    }
     if (!url) {
       return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
     }
