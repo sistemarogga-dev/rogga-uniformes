@@ -1,6 +1,7 @@
 import OpenAI, { toFile } from "openai";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
 
@@ -180,16 +181,26 @@ export async function POST(request: Request) {
     } as Parameters<typeof openai.images.edit>[0]) as { data?: Array<{ url?: string; b64_json?: string }> };
 
     const item = response.data?.[0];
-    let url: string | undefined;
-    if (item?.url) {
-      url = item.url;
-    } else if (item?.b64_json) {
-      url = `data:image/png;base64,${item.b64_json}`;
+    let imageBuffer: Buffer | undefined;
+
+    if (item?.b64_json) {
+      imageBuffer = Buffer.from(item.b64_json, "base64");
+    } else if (item?.url) {
+      const imgRes = await fetch(item.url);
+      imageBuffer = Buffer.from(await imgRes.arrayBuffer());
     }
 
-    if (!url) {
+    if (!imageBuffer) {
       return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
     }
+
+    // Redimensionar para 1080x1920 (9:16)
+    const resized = await sharp(imageBuffer)
+      .resize(1080, 1920, { fit: "cover", position: "center" })
+      .png()
+      .toBuffer();
+
+    const url = `data:image/png;base64,${resized.toString("base64")}`;
 
     return Response.json({ url, prompt: editPrompt, logoAnalysis });
   } catch (err: unknown) {
