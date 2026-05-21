@@ -55,7 +55,7 @@ function buildEditPrompt(params: {
       prompt += `   - Place the full client logotype inside the red rectangle on the t-shirt back (replacing "Logo" text)\n`;
     }
     if (logoNasManga) {
-      prompt += `   - Place the client logo on the sleeves vertically\n`;
+      prompt += `   - Place the client logo on the sleeves vertically, ONLY on the FRONT view sleeves (frente). Do NOT add logo on the back view sleeves (verso).\n`;
     }
   } else {
     prompt += `2. LOGO PLACEHOLDER: Keep the red circle and rectangle "Logo" placeholders as they are, but label them with "${cliente}".\n`;
