@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Upload, Download, ChevronLeft, Loader2,
   AlertCircle, CheckCircle2, X, Sparkles, User, Building2,
-  ZoomIn, ZoomOut, Maximize2, RotateCcw,
+  ZoomIn, ZoomOut, Maximize2, RotateCcw, Wand2,
 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -89,6 +89,12 @@ export default function GeradorPage() {
   const [estampa, setEstampa] = useState<File | null>(null);
   const [estampaPreview, setEstampaPreview] = useState("");
 
+  // Estampa: criar com IA ou carregar
+  const [modoEstampa, setModoEstampa] = useState<"carregar" | "criar">("carregar");
+  const [estampaPrompt, setEstampaPrompt] = useState("");
+  const [criandoEstampa, setCriandoEstampa] = useState(false);
+  const [erroEstampa, setErroEstampa] = useState("");
+
   // Dados básicos
   const [cliente, setCliente] = useState("");
   const [vendedor, setVendedor] = useState("");
@@ -153,6 +159,34 @@ export default function GeradorPage() {
     setEstampa(f);
     const r = new FileReader(); r.onload = (e) => setEstampaPreview(e.target?.result as string); r.readAsDataURL(f);
   }, []);
+
+  // Converter base64 URL em File para enviar ao backend
+  const base64ToFile = useCallback(async (dataUrl: string, filename: string): Promise<File> => {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: "image/png" });
+  }, []);
+
+  const criarEstampaIA = useCallback(async () => {
+    if (!estampaPrompt.trim()) { setErroEstampa("Descreva a estampa que deseja criar."); return; }
+    setCriandoEstampa(true); setErroEstampa("");
+    try {
+      const res = await fetch("/api/criar-estampa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: estampaPrompt }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setEstampaPreview(data.url);
+      const file = await base64ToFile(data.url, "estampa-ia.png");
+      setEstampa(file);
+    } catch (e: unknown) {
+      setErroEstampa(e instanceof Error ? e.message : "Erro ao criar estampa.");
+    } finally {
+      setCriandoEstampa(false);
+    }
+  }, [estampaPrompt, base64ToFile]);
 
   const setDetalhe = (key: string, value: string | boolean) => {
     setDetalhes(prev => ({ ...prev, [key]: value }));
@@ -230,8 +264,56 @@ export default function GeradorPage() {
               file={logo} preview={logoPreview} onChange={handleLogo} onClear={() => { setLogo(null); setLogoPreview(""); }} />
             <UploadBox label="2º Logo (opcional)" hint="Segundo logotipo do cliente"
               file={logo2} preview={logo2Preview} onChange={handleLogo2} onClear={() => { setLogo2(null); setLogo2Preview(""); }} />
-            <UploadBox label="Estampa (opcional)" hint="Imagem para usar como estampa"
-              file={estampa} preview={estampaPreview} onChange={handleEstampa} onClear={() => { setEstampa(null); setEstampaPreview(""); }} />
+            {/* Estampa com abas criar/carregar */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Estampa (opcional)</label>
+              <div className="flex rounded-lg overflow-hidden border border-gray-200 mb-2">
+                <button
+                  onClick={() => setModoEstampa("carregar")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold transition-colors ${modoEstampa === "carregar" ? "bg-[#C8102E] text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                  <Upload size={12} /> Carregar imagem
+                </button>
+                <button
+                  onClick={() => setModoEstampa("criar")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold transition-colors ${modoEstampa === "criar" ? "bg-[#C8102E] text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                  <Wand2 size={12} /> Criar com IA
+                </button>
+              </div>
+
+              {modoEstampa === "carregar" ? (
+                <UploadBox label="" hint="Arraste ou clique — PNG, JPG, SVG"
+                  file={estampa} preview={estampaPreview} onChange={handleEstampa} onClear={() => { setEstampa(null); setEstampaPreview(""); }} />
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    value={estampaPrompt}
+                    onChange={(e) => setEstampaPrompt(e.target.value)}
+                    placeholder="Descreva a estampa... ex: leão dourado estilo vintage, brasão com engrenagens, flor de lis moderna..."
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white resize-none"
+                  />
+                  {erroEstampa && <p className="text-xs text-red-500">{erroEstampa}</p>}
+                  {estampaPreview && modoEstampa === "criar" && (
+                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={estampaPreview} alt="Estampa gerada" className="h-12 w-12 object-contain rounded" />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-green-700">Estampa criada!</p>
+                        <p className="text-xs text-green-600">Pronta para usar na arte</p>
+                      </div>
+                      <button onClick={() => { setEstampa(null); setEstampaPreview(""); setEstampaPrompt(""); }}
+                        className="text-gray-400 hover:text-red-500"><X size={14} /></button>
+                    </div>
+                  )}
+                  <button
+                    onClick={criarEstampaIA}
+                    disabled={criandoEstampa || !estampaPrompt.trim()}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    {criandoEstampa ? <><Loader2 size={14} className="animate-spin" /> Criando estampa...</> : <><Wand2 size={14} /> Criar Estampa com IA</>}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Cliente e Vendedor */}
@@ -425,16 +507,50 @@ export default function GeradorPage() {
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : imagemAtual ? (
               <div className="overflow-auto max-h-[650px] flex items-start justify-center bg-gray-100">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={imagemAtual ? imagemAtual.url : "/template.png"}
-                  alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
+                  src={imagemAtual.url}
+                  alt="Arte gerada"
                   className="object-contain transition-transform duration-200 cursor-zoom-in"
                   style={{ transform: `scale(${zoom})`, transformOrigin: "top center", maxHeight: "650px", width: "100%" }}
-                  onClick={() => imagemAtual && setModalAberto(true)}
+                  onClick={() => setModalAberto(true)}
                 />
+              </div>
+            ) : (
+              <div className="aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] select-none">
+                {/* Logo ROGGA UNIFORMES */}
+                <div className="flex flex-col items-center gap-6 px-8 text-center">
+                  {/* Ícone / emblema */}
+                  <div className="relative">
+                    <div className="w-24 h-24 rounded-full border-4 border-[#C8102E] flex items-center justify-center bg-[#C8102E]/10">
+                      <div className="w-16 h-16 rounded-full border-2 border-[#C8102E]/50 flex items-center justify-center">
+                        <Sparkles size={32} className="text-[#C8102E]" />
+                      </div>
+                    </div>
+                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-[#C8102E] flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-white" />
+                    </div>
+                  </div>
+                  {/* Nome da marca */}
+                  <div>
+                    <p className="text-[#C8102E] text-xs font-bold tracking-[0.3em] uppercase mb-1">Gerador de Artes</p>
+                    <h2 className="text-white text-3xl font-black tracking-wider leading-tight">ROGGA</h2>
+                    <h3 className="text-white/80 text-lg font-semibold tracking-[0.2em]">UNIFORMES</h3>
+                    <div className="w-16 h-0.5 bg-[#C8102E] mx-auto mt-3" />
+                  </div>
+                  {/* Tagline */}
+                  <p className="text-white/40 text-xs tracking-widest uppercase leading-relaxed">
+                    Conforto · Qualidade<br />Profissionalismo
+                  </p>
+                  {/* Instrução */}
+                  <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl px-6 py-4">
+                    <p className="text-white/60 text-xs leading-relaxed">
+                      Preencha o formulário ao lado<br />e clique em <span className="text-[#C8102E] font-bold">Gerar Arte</span><br />para criar a proposta do cliente
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
             <div className="p-4 space-y-3">
