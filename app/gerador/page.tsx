@@ -453,7 +453,7 @@ export default function GeradorPage() {
             <p className="text-gray-500 text-sm">A arte gerada aparecerá aqui</p>
           </div>
 
-          <div className="bg-[#1a1a1f] rounded-2xl border border-white/8 overflow-hidden shadow-sm">
+          <div className="bg-[#1a1a1f] rounded-2xl border border-white/8 overflow-hidden shadow-sm w-full">
             {imagemAtual && !gerando && (
               <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/3">
                 <span className="text-xs text-gray-500 font-medium">Zoom: {Math.round(zoom * 100)}%</span>
@@ -479,7 +479,7 @@ export default function GeradorPage() {
             )}
 
             {gerando ? (
-              <div className="aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-[#0f0f13] p-8 gap-6">
+              <div className="w-full aspect-[9/16] flex flex-col items-center justify-center bg-[#0f0f13] p-8 gap-6">
                 <div className="text-center">
                   <Loader2 size={40} className="animate-spin text-[#C8102E] mx-auto mb-3" />
                   <p className="text-gray-300 font-semibold text-sm">Gerando sua arte...</p>
@@ -502,7 +502,7 @@ export default function GeradorPage() {
                 </div>
               </div>
             ) : imagemAtual ? (
-              <div className="overflow-auto max-h-[650px] flex items-start justify-center bg-black/30">
+              <div className="overflow-auto flex items-start justify-center bg-black/30">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={imagemAtual.url} alt="Arte gerada"
                   className="object-contain transition-transform duration-200 cursor-zoom-in"
