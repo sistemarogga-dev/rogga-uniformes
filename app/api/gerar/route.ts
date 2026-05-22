@@ -29,93 +29,99 @@ function buildPrompt(params: {
 }): string {
   const { cliente, vendedor, tipoCores, cores, detalhes, logoAnalysis, temLogo, temLogo2, temEstampa } = params;
 
-  let prompt = `Edit this ROGGA UNIFORMES uniform proposal template. Size: 1080x1920 (9:16). Client: "${cliente}".\n\n`;
+  // === REGRA MÁXIMA: PRESERVAÇÃO TOTAL DO TEMPLATE ===
+  let prompt = `You are editing a uniform proposal template image for ROGGA UNIFORMES. Client: "${cliente}".
+
+ABSOLUTE RULE — PRESERVE EVERYTHING PIXEL-PERFECT, EXCEPT THE SHIRTS:
+- The overall layout, proportions and dimensions must remain IDENTICAL
+- The cream/white background color must remain unchanged
+- The golden/yellow decorative borders and corner ornaments must remain unchanged
+- The ROGGA UNIFORMES logo (top center, with the RG monogram in the blue circle) must remain unchanged
+- The "PROPOSTA DE UNIFORMES" bold title must remain unchanged
+- The "CONFORTO, QUALIDADE E PROFISSIONALISMO" subtitle must remain unchanged
+- The golden horizontal divider line must remain unchanged
+- The navy blue section header bars with text "CAMISA POLO" and "CAMISETA GOLA REDONDA" must remain unchanged
+- The rounded rectangular frames/boxes containing each shirt section must remain unchanged
+- The "FRENTE" and "VERSO" labels below each shirt must remain unchanged
+- The feature icons column on the LEFT side of each shirt section (TECIDO PREMIUM, CONFORTO E RESPIRABILIDADE, DURABILIDADE E RESISTÊNCIA, CAIMENTO PERFEITO) must remain unchanged — do NOT remove or move them
+- The bottom info bar with icons (ALTA QUALIDADE, PERSONALIZAÇÃO, PRAZO ÁGIL, ATENDIMENTO) must remain unchanged
+- The dark navy footer bar with roggauniformes.com.br, @roggauniformes icons and the seller name area must remain unchanged
+${vendedor ? `- Replace ONLY the seller name text in the footer with: "${vendedor}"` : "- Keep the seller name as it appears in the template"}
+
+WHAT YOU MUST CHANGE — ONLY THE SHIRTS:
+The shirts are the ONLY elements you should modify. Everything else stays exactly the same.\n\n`;
 
   // === CORES ===
   if (tipoCores === "automatica") {
-    prompt += `COLORS: Automatic color combination based on the client logo analysis below. `;
-    if (detalhes.alternarCores) prompt += `Alternate the main and secondary colors between the polo shirt and the t-shirt. `;
-    if (logoAnalysis) prompt += `\nLogo analysis: ${logoAnalysis}`;
+    prompt += `SHIRT COLORS (automatic — extract from the provided client logo):\n`;
+    prompt += `- Use the logo's main color as the primary shirt color and the secondary logo color as accent.\n`;
+    if (detalhes.alternarCores) prompt += `- Polo shirt: primary color body/sleeves, secondary color collar/cuffs. T-shirt: swap — secondary color body, primary color accents.\n`;
+    else prompt += `- Apply the same color scheme to both shirts.\n`;
+    if (logoAnalysis) prompt += `Logo color analysis: ${logoAnalysis}\n`;
   } else {
-    prompt += `COLORS - Detailed combination:\n`;
-    prompt += `POLO:\n`;
-    if (cores.poloTronco) prompt += `- Polo body and sleeves: ${cores.poloTronco}\n`;
-    if (cores.poloGola) prompt += `- Polo collar and cuffs: ${cores.poloGola}\n`;
+    prompt += `SHIRT COLORS (specific):\n`;
+    prompt += `POLO SHIRT:\n`;
+    if (cores.poloTronco) prompt += `- Body and sleeves: ${cores.poloTronco}\n`;
+    if (cores.poloGola) prompt += `- Collar and cuffs: ${cores.poloGola}\n`;
     prompt += `T-SHIRT:\n`;
-    if (cores.camisetaTronco) prompt += `- T-shirt body: ${cores.camisetaTronco}\n`;
-    if (cores.camisetaMangas) prompt += `- T-shirt sleeves: ${cores.camisetaMangas}\n`;
-    else if (cores.camisetaTronco) prompt += `- T-shirt sleeves: same as body (${cores.camisetaTronco})\n`;
-    if (cores.camisetaGola) prompt += `- T-shirt collar: ${cores.camisetaGola}\n`;
-    if (cores.camisetaPunho) prompt += `- T-shirt cuff: ${cores.camisetaPunho}\n`;
+    if (cores.camisetaTronco) prompt += `- Body: ${cores.camisetaTronco}\n`;
+    if (cores.camisetaMangas) prompt += `- Sleeves: ${cores.camisetaMangas}\n`;
+    else if (cores.camisetaTronco) prompt += `- Sleeves: same as body (${cores.camisetaTronco})\n`;
+    if (cores.camisetaGola) prompt += `- Collar: ${cores.camisetaGola}\n`;
+    if (cores.camisetaPunho) prompt += `- Cuffs: ${cores.camisetaPunho}\n`;
   }
   prompt += `\n`;
 
   // === LOGOS ===
-  prompt += `LOGO PLACEMENT:\n`;
   if (temLogo) {
-    prompt += `- Remove background from the client logo (image provided).\n`;
-    prompt += `- Place the client logo inside the red circle on the POLO FRONT chest (replacing "Logo" text).\n`;
-    prompt += `- Place the full client logo inside the red rectangle on the POLO BACK (replacing "Logo" text).\n`;
-    prompt += `- Place the client logo inside the red circle on the T-SHIRT FRONT chest (replacing "Logo" text).\n`;
-    prompt += `- Place the full client logo inside the red rectangle on the T-SHIRT BACK (replacing "Logo" text).\n`;
+    prompt += `CLIENT LOGO PLACEMENT (use the provided logo image):\n`;
+    prompt += `- Remove the background from the client logo.\n`;
+    prompt += `- Place the logo INSIDE the red circle on the POLO FRONT (left chest area) — fit it inside, replacing the "Logo" placeholder text.\n`;
+    prompt += `- Place the logo INSIDE the red rectangle on the POLO BACK — fit it inside, replacing the "Logo" placeholder text.\n`;
+    prompt += `- Place the logo INSIDE the red circle on the T-SHIRT FRONT (left chest area) — fit it inside, replacing the "Logo" placeholder text.\n`;
+    prompt += `- Place the logo INSIDE the red rectangle on the T-SHIRT BACK — fit it inside, replacing the "Logo" placeholder text.\n`;
+    prompt += `- The red circles and rectangles are placement guides — after placing the logo, they can be removed.\n`;
+    prompt += `- Logos on sleeves: FRONT views only, not on back views.\n\n`;
   }
 
   // === DETALHES OPCIONAIS ===
   const detalhesList: string[] = [];
 
-  if (detalhes.golaV) detalhesList.push("Make the t-shirt with a V-neck collar instead of round neck.");
-
-  if (detalhes.mangaLonga) detalhesList.push("Make the t-shirt with long sleeves, with cuffs in the same color as the sleeves.");
+  if (detalhes.golaV) detalhesList.push("Change the T-SHIRT collar from round neck to V-neck.");
+  if (detalhes.mangaLonga) detalhesList.push("Change the T-SHIRT to long sleeves with cuffs matching the sleeve color.");
 
   if (temEstampa && detalhes.usarEstampa) {
-    let estampaTarget = "";
-    if (detalhes.usarEstampa === "polo") estampaTarget = "the polo shirt";
-    else if (detalhes.usarEstampa === "camiseta") estampaTarget = "the t-shirt";
-    else estampaTarget = "both shirts";
-    let estampaDesc = `Use the provided stamp/design image on ${estampaTarget}.`;
-    if (detalhes.mudarCoresEstampa) estampaDesc += ` Change the stamp colors to: ${detalhes.mudarCoresEstampa}.`;
-    detalhesList.push(estampaDesc);
+    const target = detalhes.usarEstampa === "polo" ? "the polo shirt" : detalhes.usarEstampa === "camiseta" ? "the t-shirt" : "both shirts";
+    let d = `Apply the provided stamp/design image onto ${target} (front view only).`;
+    if (detalhes.mudarCoresEstampa) d += ` Recolor the stamp to: ${detalhes.mudarCoresEstampa}.`;
+    detalhesList.push(d);
   }
 
   if (temLogo2 && detalhes.usarLogo2) {
-    let logo2Target = "";
-    if (detalhes.usarLogo2 === "polo") logo2Target = "the polo shirt";
-    else if (detalhes.usarLogo2 === "camiseta") logo2Target = "the t-shirt";
-    else logo2Target = "both shirts";
-    detalhesList.push(`Use the second provided logo on ${logo2Target}.`);
+    const target = detalhes.usarLogo2 === "polo" ? "the polo shirt" : detalhes.usarLogo2 === "camiseta" ? "the t-shirt" : "both shirts";
+    detalhesList.push(`Place the second provided logo on ${target}.`);
   }
 
-  if (detalhes.punhoBarra) detalhesList.push(`Add a thin bar/stripe on the cuffs of: ${detalhes.punhoBarra}.`);
-
-  if (detalhes.bandeiras) detalhesList.push(`Add flags on the arms (FRONT view sleeves only, not on back view): ${detalhes.bandeiras}.`);
-
-  if (detalhes.logo2OutroPeito && temLogo2) detalhesList.push(`Add the second logo on the other chest (right side) on: ${detalhes.logo2OutroPeito}.`);
+  if (detalhes.punhoBarra) detalhesList.push(`Add a thin contrasting stripe/bar at the cuffs of: ${detalhes.punhoBarra}.`);
+  if (detalhes.bandeiras) detalhesList.push(`Add flag patch(es) on the sleeve(s) — FRONT views only, NOT on back views: ${detalhes.bandeiras}.`);
+  if (detalhes.logo2OutroPeito && temLogo2) detalhesList.push(`Also place the second logo on the right chest side (opposite the main logo) on: ${detalhes.logo2OutroPeito}.`);
 
   if (detalhesList.length > 0) {
-    prompt += `\nADDITIONAL DETAILS:\n`;
+    prompt += `ADDITIONAL SHIRT MODIFICATIONS:\n`;
     detalhesList.forEach((d, i) => { prompt += `${i + 1}. ${d}\n`; });
+    prompt += `\n`;
   }
 
-  // === VENDEDOR ===
-  if (vendedor) prompt += `\nSELLER: Replace the seller name in the bottom bar with "${vendedor}".\n`;
+  // === REGRAS DAS CAMISAS ===
+  prompt += `POLO SHIRT RULES (mandatory):
+- Exactly 2 buttons on the placket — no more, no less
+- The button placket (carcela), both inside and outside, must be the EXACT SAME color as the polo body
+- Collar must be PLAIN and CLEAN — absolutely no stripes, patterns or decorations on the collar
 
-  // === REGRAS FIXAS ===
-  prompt += `
-STRICT RULES - PRESERVE EXACTLY:
-- ROGGA UNIFORMES logo and all branding at the top (do not modify)
-- Template layout, structure, golden borders, cream/white background
-- Section labels: CAMISA POLO, CAMISETA GOLA REDONDA, FRENTE, VERSO
-- Feature icons on the left side of each section
-- Bottom bar: roggauniformes.com.br, @roggauniformes (only update seller name)
-- "PROPOSTA DE UNIFORMES" title and "CONFORTO, QUALIDADE E PROFISSIONALISMO" subtitle
+T-SHIRT RULES (mandatory):
+- Collar must be PLAIN and CLEAN — no stripes or patterns (unless V-neck was requested above)
 
-POLO RULES:
-- Exactly 2 buttons only
-- Polo carcela (button placket, inside AND outside) must be the SAME color as the polo body
-- Clean collar with NO stripes, NO patterns, NO decorations
-
-T-SHIRT RULES:
-- Clean collar with NO stripes, NO patterns, NO decorations (unless V-neck was requested)`;
+FINAL REMINDER: The template frame, background, all text, all icons, all decorative elements outside the shirts must remain 100% identical to the input image. Only recolor/modify the shirts themselves.`;
 
   return prompt;
 }
