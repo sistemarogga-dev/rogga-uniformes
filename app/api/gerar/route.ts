@@ -200,11 +200,51 @@ export async function POST(request: Request) {
       temLogo: !!logoBuffer, temLogo2: !!logo2Buffer, temEstampa: !!estampaBuffer,
     });
 
-    // Preparar template: enviar no tamanho original para a API usar size:"auto"
-    // A API vai respeitar a proporção 9:16 do template enviado
+    // Carregar template original
     const rawTemplate = fs.readFileSync(templatePath);
-    const templateBuf = rawTemplate;
-    const images: Parameters<typeof toFile>[0][] = [templateBuf];
+    const templateMeta = await sharp(rawTemplate).metadata();
+    const tW = templateMeta.width ?? 900;
+    const tH = templateMeta.height ?? 1600;
+
+    // ─── MÁSCARA ────────────────────────────────────────────────────────────────
+    // Regra: alpha=0 (transparente) = IA pode editar | alpha=255 (opaco) = preservar
+    // Zonas editáveis = apenas as camisas dentro de cada seção.
+    // Tudo fora (header, ícones, rodapé, bordas douradas) fica PRETO = preservado.
+    //
+    // Posições aproximadas no template 900×1600:
+    //   Polo shirts:     y 330–730, x 120–880
+    //   Camiseta shirts: y 820–1270, x 120–880
+    // ────────────────────────────────────────────────────────────────────────────
+    const scaleX = tW / 900;
+    const scaleY = tH / 1600;
+    const rx = (v: number) => Math.round(v * scaleX);
+    const ry = (v: number) => Math.round(v * scaleY);
+
+    // SVG da máscara: fundo preto (preservar tudo), retângulos brancos nas áreas das camisas
+    const maskSvg = `<svg width="${tW}" height="${tH}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${tW}" height="${tH}" fill="black"/>
+      <rect x="${rx(120)}" y="${ry(330)}" width="${rx(760)}" height="${ry(400)}" fill="white"/>
+      <rect x="${rx(120)}" y="${ry(820)}" width="${rx(760)}" height="${ry(450)}" fill="white"/>
+    </svg>`;
+
+    // Converter SVG para PNG RGBA (branco=alpha 255, preto=alpha 255)
+    // Depois inverter: branco → alpha 0 (editável), preto → alpha 255 (preservar)
+    const maskRgb = await sharp(Buffer.from(maskSvg)).png().toBuffer();
+    // Extrair canal R como máscara de alpha e inverter (branco→0, preto→255)
+    const maskAlpha = await sharp(maskRgb)
+      .extractChannel("red")
+      .negate()   // inverte: branco(255)→0, preto(0)→255
+      .toBuffer();
+    // Montar imagem RGBA: pixels pretos com alpha variável
+    const maskFinal = await sharp({
+      create: { width: tW, height: tH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    })
+      .joinChannel(maskAlpha)
+      .png()
+      .toBuffer();
+
+    // ─── IMAGENS PARA O EDIT ────────────────────────────────────────────────────
+    const images: Parameters<typeof toFile>[0][] = [rawTemplate];
     const names = ["template.png"];
     const types = ["image/png"];
 
@@ -213,13 +253,15 @@ export async function POST(request: Request) {
     if (estampaBuffer) { images.push(estampaBuffer); names.push("estampa.png"); types.push(estampa?.type || "image/png"); }
 
     const imageFiles = await Promise.all(images.map((buf, i) => toFile(buf as Buffer, names[i], { type: types[i] })));
+    const maskFile = await toFile(maskFinal, "mask.png", { type: "image/png" });
 
     const imageInput = imageFiles.length === 1 ? imageFiles[0] : imageFiles;
 
-    // Editar template
+    // Editar template com máscara (somente áreas das camisas são editáveis)
     const response = await openai.images.edit({
       model: "gpt-image-1",
       image: imageInput,
+      mask: maskFile,
       prompt: editPrompt,
       n: 1,
       size: "auto",
