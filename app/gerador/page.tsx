@@ -510,32 +510,63 @@ export default function GeradorPage() {
                   onClick={() => setModalAberto(true)} />
               </div>
             ) : (
-              <div className="aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] select-none">
-                <div className="flex flex-col items-center gap-6 px-8 text-center">
-                  <div className="relative">
-                    <div className="w-24 h-24 rounded-full border-4 border-[#C8102E] flex items-center justify-center bg-[#C8102E]/10">
-                      <div className="w-16 h-16 rounded-full border-2 border-[#C8102E]/50 flex items-center justify-center">
-                        <Sparkles size={32} className="text-[#C8102E]" />
+              <div className="relative w-full aspect-[9/16] max-h-[650px] select-none overflow-hidden bg-gradient-to-b from-[#0d1117] via-[#111827] to-[#0d1117]">
+                {/* Ornamentos de canto */}
+                <div className="absolute top-0 left-0 w-20 h-20 border-t-2 border-l-2 border-[#C8A951]/60 rounded-tl-2xl" />
+                <div className="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[#C8A951]/60 rounded-tr-2xl" />
+                <div className="absolute bottom-0 left-0 w-20 h-20 border-b-2 border-l-2 border-[#C8A951]/60 rounded-bl-2xl" />
+                <div className="absolute bottom-0 right-0 w-20 h-20 border-b-2 border-r-2 border-[#C8A951]/60 rounded-br-2xl" />
+
+                {/* Faixa de brilho central */}
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-[#C8A951]/20 to-transparent" />
+
+                {/* Conteúdo centralizado preenchendo o frame */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0 p-8">
+
+                  {/* Emblema superior */}
+                  <div className="relative mb-6">
+                    <div className="w-28 h-28 rounded-full border-[3px] border-[#C8102E] flex items-center justify-center bg-[#C8102E]/10 shadow-lg shadow-[#C8102E]/20">
+                      <div className="w-20 h-20 rounded-full border border-[#C8102E]/40 flex items-center justify-center">
+                        <Sparkles size={36} className="text-[#C8102E]" />
                       </div>
                     </div>
-                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-[#C8102E] flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-white" />
+                    <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-[#C8102E] flex items-center justify-center shadow-md">
+                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
                     </div>
                   </div>
-                  <div>
-                    <p className="text-[#C8102E] text-xs font-bold tracking-[0.3em] uppercase mb-1">Gerador de Artes</p>
-                    <h2 className="text-white text-3xl font-black tracking-wider leading-tight">ROGGA</h2>
-                    <h3 className="text-white/80 text-lg font-semibold tracking-[0.2em]">UNIFORMES</h3>
-                    <div className="w-16 h-0.5 bg-[#C8102E] mx-auto mt-3" />
+
+                  {/* Eyebrow */}
+                  <p className="text-[#C8A951] text-[10px] font-bold tracking-[0.4em] uppercase mb-3">Gerador de Artes</p>
+
+                  {/* Nome principal */}
+                  <h2 className="text-white text-5xl font-black tracking-widest leading-none drop-shadow-lg">ROGGA</h2>
+                  <h3 className="text-white/70 text-xl font-light tracking-[0.5em] mt-1 mb-5">UNIFORMES</h3>
+
+                  {/* Linha decorativa dourada */}
+                  <div className="flex items-center gap-3 mb-6 w-full max-w-[70%]">
+                    <div className="flex-1 h-px bg-gradient-to-r from-transparent to-[#C8A951]/60" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#C8A951]" />
+                    <div className="flex-1 h-px bg-gradient-to-l from-transparent to-[#C8A951]/60" />
                   </div>
-                  <p className="text-white/40 text-xs tracking-widest uppercase leading-relaxed">
-                    Conforto · Qualidade<br />Profissionalismo
+
+                  {/* Tagline */}
+                  <p className="text-white/30 text-[11px] tracking-[0.25em] uppercase text-center leading-loose mb-8">
+                    Conforto · Qualidade · Profissionalismo
                   </p>
-                  <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl px-6 py-4">
-                    <p className="text-white/60 text-xs leading-relaxed">
-                      Preencha o formulário ao lado<br />e clique em <span className="text-[#C8102E] font-bold">Gerar Arte</span><br />para criar a proposta do cliente
+
+                  {/* Card de instrução */}
+                  <div className="w-full max-w-[80%] bg-white/5 border border-white/10 rounded-2xl px-6 py-5 text-center">
+                    <p className="text-white/50 text-xs leading-relaxed">
+                      Preencha o formulário ao lado<br />e clique em{" "}
+                      <span className="text-[#C8102E] font-bold">Gerar Arte</span>
+                      <br />para criar a proposta do cliente
                     </p>
                   </div>
+
+                  {/* Versão / badge */}
+                  <p className="absolute bottom-5 text-white/15 text-[9px] tracking-widest uppercase">
+                    roggauniformes.com.br
+                  </p>
                 </div>
               </div>
             )}
