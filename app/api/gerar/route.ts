@@ -210,12 +210,12 @@ export async function POST(request: Request) {
 
     if (!imageBuffer2) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
 
-    // Etapa 1: Ajustar para 1080x1920 sem cortes
+    // Etapa 1: Redimensionar para exatamente 1080x1920 (mesmas dimensões do template)
     const resized = await sharp(imageBuffer2)
-      .resize(1080, 1920, { fit: "contain", position: "center", background: { r: 255, g: 255, b: 255, alpha: 1 } })
+      .resize(1080, 1920, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .toBuffer();
 
-    // Etapa 2: Upscale 2x → 2160x3840
+    // Etapa 2: Upscale 2x → 2160x3840 para alta resolução
     const upscaled = await sharp(resized)
       .resize(2160, 3840, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 6, quality: 100 })

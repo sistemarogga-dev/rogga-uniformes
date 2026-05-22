@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Upload, Download, ChevronLeft, Loader2,
   AlertCircle, CheckCircle2, X, Sparkles, User, Building2,
+  ZoomIn, ZoomOut, Maximize2, RotateCcw,
 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -119,6 +120,8 @@ export default function GeradorPage() {
   const [sucesso, setSucesso] = useState("");
   const [imagemAtual, setImagemAtual] = useState<ArteGerada | null>(null);
   const [historico, setHistorico] = useState<ArteGerada[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [modalAberto, setModalAberto] = useState(false);
 
   // Barra de progresso simulada durante geração
   useEffect(() => {
@@ -370,6 +373,31 @@ export default function GeradorPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            {/* Controles de zoom — só aparecem quando há imagem gerada */}
+            {imagemAtual && !gerando && (
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <span className="text-xs text-gray-500 font-medium">Zoom: {Math.round(zoom * 100)}%</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors" title="Diminuir">
+                    <ZoomOut size={16} />
+                  </button>
+                  <button onClick={() => setZoom(1)}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors" title="100%">
+                    <RotateCcw size={14} />
+                  </button>
+                  <button onClick={() => setZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors" title="Ampliar">
+                    <ZoomIn size={16} />
+                  </button>
+                  <button onClick={() => setModalAberto(true)}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors ml-1" title="Tela cheia">
+                    <Maximize2 size={15} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {gerando ? (
               <div className="aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-gray-50 p-8 gap-6">
                 <div className="text-center">
@@ -398,12 +426,16 @@ export default function GeradorPage() {
                 </div>
               </div>
             ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={imagemAtual ? imagemAtual.url : "/template.png"}
-                alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
-                className="w-full object-contain max-h-[650px]"
-              />
+              <div className="overflow-auto max-h-[650px] flex items-start justify-center bg-gray-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imagemAtual ? imagemAtual.url : "/template.png"}
+                  alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
+                  className="object-contain transition-transform duration-200 cursor-zoom-in"
+                  style={{ transform: `scale(${zoom})`, transformOrigin: "top center", maxHeight: "650px", width: "100%" }}
+                  onClick={() => imagemAtual && setModalAberto(true)}
+                />
+              </div>
             )}
             <div className="p-4 space-y-3">
               {imagemAtual ? (
@@ -455,6 +487,47 @@ export default function GeradorPage() {
       <footer className="bg-[#1a1a2e] text-gray-400 text-center py-4 text-xs">
         © {new Date().getFullYear()} ROGGA UNIFORMES — Gerador de Artes com IA
       </footer>
+
+      {/* Modal tela cheia */}
+      {modalAberto && imagemAtual && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 bg-black/60">
+            <span className="text-white text-sm font-semibold">{imagemAtual.cliente}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setZoom(z => Math.max(0.3, +(z - 0.25).toFixed(2)))}
+                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors">
+                <ZoomOut size={18} />
+              </button>
+              <span className="text-white text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
+                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors">
+                <ZoomIn size={18} />
+              </button>
+              <button onClick={() => setZoom(1)}
+                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors text-xs">
+                100%
+              </button>
+              <button onClick={() => baixarImagem(imagemAtual.url, imagemAtual.cliente)}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#C8102E] hover:bg-red-700 text-white text-xs font-semibold transition-colors">
+                <Download size={14} /> Baixar
+              </button>
+              <button onClick={() => { setModalAberto(false); setZoom(1); }}
+                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto flex items-start justify-center p-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imagemAtual.url}
+              alt="Arte gerada"
+              style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform 0.2s" }}
+              className="max-w-sm w-full"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
