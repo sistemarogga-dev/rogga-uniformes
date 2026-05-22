@@ -6,6 +6,7 @@ import {
   Upload, Download, ChevronLeft, Loader2,
   AlertCircle, CheckCircle2, X, Sparkles, User, Building2,
 } from "lucide-react";
+import { useEffect } from "react";
 
 interface ArteGerada {
   url: string;
@@ -113,10 +114,28 @@ export default function GeradorPage() {
 
   // Estado
   const [gerando, setGerando] = useState(false);
+  const [progresso, setProgresso] = useState(0);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [imagemAtual, setImagemAtual] = useState<ArteGerada | null>(null);
   const [historico, setHistorico] = useState<ArteGerada[]>([]);
+
+  // Barra de progresso simulada durante geração
+  useEffect(() => {
+    if (!gerando) { setProgresso(0); return; }
+    setProgresso(5);
+    const etapas = [
+      { p: 15, t: 2000 },
+      { p: 30, t: 5000 },
+      { p: 45, t: 10000 },
+      { p: 60, t: 18000 },
+      { p: 75, t: 28000 },
+      { p: 88, t: 40000 },
+      { p: 95, t: 52000 },
+    ];
+    const timers = etapas.map(({ p, t }) => setTimeout(() => setProgresso(p), t));
+    return () => timers.forEach(clearTimeout);
+  }, [gerando]);
   const [showPrompt, setShowPrompt] = useState(false);
 
   const handleLogo = useCallback((f: File) => {
@@ -351,12 +370,41 @@ export default function GeradorPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imagemAtual ? imagemAtual.url : "/template.png"}
-              alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
-              className="w-full object-contain max-h-[650px]"
-            />
+            {gerando ? (
+              <div className="aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-gray-50 p-8 gap-6">
+                <div className="text-center">
+                  <Loader2 size={40} className="animate-spin text-[#C8102E] mx-auto mb-3" />
+                  <p className="text-gray-700 font-semibold text-sm">Gerando sua arte...</p>
+                  <p className="text-gray-400 text-xs mt-1">A IA está criando a proposta. Isso pode levar até 60 segundos.</p>
+                </div>
+                <div className="w-full max-w-xs space-y-2">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Progresso</span>
+                    <span>{progresso}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div
+                      className="h-3 rounded-full bg-[#C8102E] transition-all duration-1000 ease-out"
+                      style={{ width: `${progresso}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-400 text-center">
+                    {progresso < 20 && "Analisando o logotipo..."}
+                    {progresso >= 20 && progresso < 45 && "Preparando o template..."}
+                    {progresso >= 45 && progresso < 70 && "Aplicando cores e logos..."}
+                    {progresso >= 70 && progresso < 90 && "Refinando detalhes..."}
+                    {progresso >= 90 && "Finalizando e otimizando..."}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={imagemAtual ? imagemAtual.url : "/template.png"}
+                alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
+                className="w-full object-contain max-h-[650px]"
+              />
+            )}
             <div className="p-4 space-y-3">
               {imagemAtual ? (
                 <>
