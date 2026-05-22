@@ -87,7 +87,7 @@ export default function GeradorPage() {
   const [estampa, setEstampa] = useState<File | null>(null);
   const [estampaPreview, setEstampaPreview] = useState("");
 
-  const [modoEstampa, setModoEstampa] = useState<"carregar" | "criar">("carregar");
+  const [modoEstampa, setModoEstampa] = useState<"carregar" | "criar">("criar");
   const [estampaPrompt, setEstampaPrompt] = useState("");
   const [criandoEstampa, setCriandoEstampa] = useState(false);
   const [erroEstampa, setErroEstampa] = useState("");
