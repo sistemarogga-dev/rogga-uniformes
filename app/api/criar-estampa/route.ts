@@ -11,7 +11,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Descreva a estampa que deseja criar." }, { status: 400 });
     }
 
-    const enhancedPrompt = `Create a professional uniform stamp/design for sportswear or workwear. Style: clean vector art, suitable for screen printing or embroidery. Design: ${prompt}. Background: transparent or white. High quality, centered composition.`;
+    const enhancedPrompt = `Create a seamless background pattern or sublimation print design for sportswear uniforms. This is NOT a logo — it is a full shirt body graphic/pattern. Style: bold, dynamic, suitable for sublimation printing on fabric. The design should cover the entire surface like a textile print, not be centered like a badge. Design theme: ${prompt}. Use vivid colors and energetic shapes. No text, no logos, no borders — just a repeating or flowing background pattern for a sports jersey or uniform shirt.`;
 
     const response = await openai.images.generate({
       model: "gpt-image-1",

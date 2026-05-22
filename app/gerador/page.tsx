@@ -262,7 +262,7 @@ export default function GeradorPage() {
             {/* Painel estampa */}
             <div className="border border-white/8 rounded-xl p-3 space-y-2 bg-white/3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-gray-400">✨ Estampa</p>
+                <p className="text-xs font-semibold text-gray-400">✨ Estampa (padrão de fundo)</p>
                 <div className="flex rounded-lg overflow-hidden border border-white/10">
                   <button
                     onClick={() => { setModoEstampa("carregar"); setEstampa(null); setEstampaPreview(""); }}
@@ -280,7 +280,7 @@ export default function GeradorPage() {
               {modoEstampa === "criar" && (
                 <div className="space-y-2">
                   <textarea value={estampaPrompt} onChange={(e) => setEstampaPrompt(e.target.value)}
-                    placeholder="Descreva a estampa... ex: leão dourado estilo vintage, brasão com engrenagens..."
+                    placeholder="Descreva o padrão de fundo... ex: chamas laranja e preto, listras diagonais azul e branco, ondas abstratas, camuflagem, geométrico futurista..."
                     rows={2}
                     className="w-full border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-purple-500 bg-white/5 text-gray-200 placeholder-gray-600 resize-none" />
                   {erroEstampa && <p className="text-xs text-red-400">{erroEstampa}</p>}
