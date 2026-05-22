@@ -200,8 +200,30 @@ export async function POST(request: Request) {
       temLogo: !!logoBuffer, temLogo2: !!logo2Buffer, temEstampa: !!estampaBuffer,
     });
 
-    // Preparar imagens para o edit
-    const templateBuf = fs.readFileSync(templatePath);
+    // Preparar template: converter para 2:3 (1024x1536) adicionando faixas brancas
+    // O template é 9:16 (900x1600). A API gpt-image-1 usa 1024x1536 (2:3).
+    // Adicionar padding lateral para encaixar sem cortar o conteúdo.
+    const rawTemplate = fs.readFileSync(templatePath);
+    const templateMeta = await sharp(rawTemplate).metadata();
+    const tW = templateMeta.width ?? 900;
+    const tH = templateMeta.height ?? 1600;
+    // Calcular dimensões do canvas 2:3 que contenha o template inteiro
+    const canvasH = 1536;
+    const canvasW = Math.round(canvasH * (tW / tH)); // mantém proporção do template
+    // Embutir o template redimensionado em canvas branco 1024x1536
+    const templatePadded = await sharp({
+      create: { width: 1024, height: 1536, channels: 3, background: { r: 255, g: 255, b: 255 } }
+    })
+      .composite([{
+        input: await sharp(rawTemplate)
+          .resize(canvasW, canvasH, { fit: "contain", kernel: sharp.kernel.lanczos3 })
+          .toBuffer(),
+        gravity: "center",
+      }])
+      .png()
+      .toBuffer();
+
+    const templateBuf = templatePadded;
     const images: Parameters<typeof toFile>[0][] = [templateBuf];
     const names = ["template.png"];
     const types = ["image/png"];
@@ -236,8 +258,16 @@ export async function POST(request: Request) {
 
     if (!imageBuffer2) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
 
-    // Redimensionar para exatamente 900x1600 (dimensões finais da arte)
+    // A saída da API é 1024x1536 (2:3) com o template embutido em 9:16 + faixas brancas laterais.
+    // Recortar para a área do template (9:16) e redimensionar para 900x1600.
+    const outMeta = await sharp(imageBuffer2).metadata();
+    const outW = outMeta.width ?? 1024;
+    const outH = outMeta.height ?? 1536;
+    // Largura real do template dentro do canvas (mantendo 9:16 dentro do 2:3)
+    const innerW = Math.round(outH * (9 / 16)); // largura 9:16
+    const leftPad = Math.round((outW - innerW) / 2);
     const upscaled = await sharp(imageBuffer2)
+      .extract({ left: Math.max(0, leftPad), top: 0, width: Math.min(innerW, outW), height: outH })
       .resize(900, 1600, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 6, quality: 100 })
       .toBuffer();
