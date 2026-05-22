@@ -200,46 +200,10 @@ export async function POST(request: Request) {
       temLogo: !!logoBuffer, temLogo2: !!logo2Buffer, temEstampa: !!estampaBuffer,
     });
 
-    // Preparar template:
-    // 1. Adicionar margem de segurança de 40px em todos os lados (fundo creme)
-    // 2. Converter para 2:3 (1024x1536) para compatibilidade com a API
-    const MARGIN = 40; // px de margem de segurança em todos os lados
+    // Preparar template: enviar no tamanho original para a API usar size:"auto"
+    // A API vai respeitar a proporção 9:16 do template enviado
     const rawTemplate = fs.readFileSync(templatePath);
-    const templateMeta = await sharp(rawTemplate).metadata();
-    const tW = templateMeta.width ?? 900;
-    const tH = templateMeta.height ?? 1600;
-
-    // Etapa 1: template com margem de segurança (cor creme do fundo)
-    const templateWithMargin = await sharp({
-      create: {
-        width: tW + MARGIN * 2,
-        height: tH + MARGIN * 2,
-        channels: 3,
-        background: { r: 245, g: 240, b: 230 }, // creme, igual ao fundo do template
-      }
-    })
-      .composite([{ input: rawTemplate, left: MARGIN, top: MARGIN }])
-      .png()
-      .toBuffer();
-
-    // Etapa 2: embutir em canvas branco 1024x1536 (2:3) para a API
-    const mW = tW + MARGIN * 2;
-    const mH = tH + MARGIN * 2;
-    const canvasH = 1536;
-    const canvasW = Math.round(canvasH * (mW / mH));
-    const templatePadded = await sharp({
-      create: { width: 1024, height: 1536, channels: 3, background: { r: 255, g: 255, b: 255 } }
-    })
-      .composite([{
-        input: await sharp(templateWithMargin)
-          .resize(canvasW, canvasH, { fit: "contain", kernel: sharp.kernel.lanczos3 })
-          .toBuffer(),
-        gravity: "center",
-      }])
-      .png()
-      .toBuffer();
-
-    const templateBuf = templatePadded;
+    const templateBuf = rawTemplate;
     const images: Parameters<typeof toFile>[0][] = [templateBuf];
     const names = ["template.png"];
     const types = ["image/png"];
@@ -258,7 +222,7 @@ export async function POST(request: Request) {
       image: imageInput,
       prompt: editPrompt,
       n: 1,
-      size: "1024x1536",
+      size: "auto",
       quality: "high",
     } as Parameters<typeof openai.images.edit>[0]) as { data?: Array<{ url?: string; b64_json?: string }> };
 
@@ -274,37 +238,8 @@ export async function POST(request: Request) {
 
     if (!imageBuffer2) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
 
-    // Saída da API: 1024x1536 (2:3) contendo o template+margem em 9:16 com faixas laterais brancas.
-    // 1. Recortar a faixa lateral (converter de 2:3 → proporção do template+margem)
-    // 2. Recortar a margem de segurança (40px em todos os lados escalada)
-    // 3. Redimensionar para 900x1600
-    const outMeta = await sharp(imageBuffer2).metadata();
-    const outW = outMeta.width ?? 1024;
-    const outH = outMeta.height ?? 1536;
-
-    // Proporção do template+margem
-    const tmRatio = (tW + MARGIN * 2) / (tH + MARGIN * 2);
-    const innerW = Math.round(outH * tmRatio);
-    const leftPad = Math.round((outW - innerW) / 2);
-
-    // Recortar faixas laterais → agora temos só a área do template+margem
-    const cropped = await sharp(imageBuffer2)
-      .extract({ left: Math.max(0, leftPad), top: 0, width: Math.min(innerW, outW), height: outH })
-      .toBuffer();
-
-    // Recortar a margem de segurança (escalonada proporcionalmente)
-    const croppedMeta = await sharp(cropped).metadata();
-    const cW = croppedMeta.width ?? innerW;
-    const cH = croppedMeta.height ?? outH;
-    const scaleX = cW / (tW + MARGIN * 2);
-    const scaleY = cH / (tH + MARGIN * 2);
-    const marginLeft = Math.round(MARGIN * scaleX);
-    const marginTop = Math.round(MARGIN * scaleY);
-    const innerCropW = Math.min(cW - marginLeft * 2, cW);
-    const innerCropH = Math.min(cH - marginTop * 2, cH);
-
-    const upscaled = await sharp(cropped)
-      .extract({ left: marginLeft, top: marginTop, width: innerCropW, height: innerCropH })
+    // Redimensionar a saída da API diretamente para 900x1600 sem cortes
+    const upscaled = await sharp(imageBuffer2)
       .resize(900, 1600, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 6, quality: 100 })
       .toBuffer();
