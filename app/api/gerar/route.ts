@@ -30,34 +30,44 @@ function buildPrompt(params: {
   const { cliente, vendedor, tipoCores, cores, detalhes, logoAnalysis, temLogo, temLogo2, temEstampa } = params;
 
   // === REGRA MÁXIMA: PRESERVAÇÃO TOTAL DO TEMPLATE ===
-  let prompt = `You are editing a uniform proposal template image for ROGGA UNIFORMES. Client: "${cliente}".
+  let prompt = `You are a professional uniform designer editing a ROGGA UNIFORMES proposal template. Client: "${cliente}".
 
-ABSOLUTE RULE — PRESERVE EVERYTHING PIXEL-PERFECT, EXCEPT THE SHIRTS:
-- The overall layout, proportions and dimensions must remain IDENTICAL
-- The cream/white background color must remain unchanged
-- The golden/yellow decorative borders and corner ornaments must remain unchanged
-- The ROGGA UNIFORMES logo (top center, with the RG monogram in the blue circle) must remain unchanged
-- The "PROPOSTA DE UNIFORMES" bold title must remain unchanged
-- The "CONFORTO, QUALIDADE E PROFISSIONALISMO" subtitle must remain unchanged
-- The golden horizontal divider line must remain unchanged
-- The navy blue section header bars with text "CAMISA POLO" and "CAMISETA GOLA REDONDA" must remain unchanged
-- The rounded rectangular frames/boxes containing each shirt section must remain unchanged
-- The "FRENTE" and "VERSO" labels below each shirt must remain unchanged
-- The feature icons column on the LEFT side of each shirt section (TECIDO PREMIUM, CONFORTO E RESPIRABILIDADE, DURABILIDADE E RESISTÊNCIA, CAIMENTO PERFEITO) must remain unchanged — do NOT remove or move them
-- The bottom info bar with icons (ALTA QUALIDADE, PERSONALIZAÇÃO, PRAZO ÁGIL, ATENDIMENTO) must remain unchanged
-- The dark navy footer bar with roggauniformes.com.br, @roggauniformes icons and the seller name area must remain unchanged
-${vendedor ? `- Replace ONLY the seller name text in the footer with: "${vendedor}"` : "- Keep the seller name as it appears in the template"}
+CRITICAL — THIS IS AN IMAGE EDIT, NOT A NEW IMAGE GENERATION:
+You must preserve the exact template structure and only modify the shirts inside it.
 
-WHAT YOU MUST CHANGE — ONLY THE SHIRTS:
-The shirts are the ONLY elements you should modify. Everything else stays exactly the same.\n\n`;
+PRESERVE UNCHANGED — PIXEL-PERFECT:
+• Background: cream/off-white color throughout
+• Top header: ROGGA Uniformes logo (RG monogram in blue circle + text) — do NOT touch
+• Decorative elements: all golden/yellow borders, corner ornaments, diagonal accent lines
+• Title: "PROPOSTA DE UNIFORMES" in bold dark text
+• Subtitle: "CONFORTO, QUALIDADE E PROFISSIONALISMO" in gold/orange
+• Golden horizontal divider line under the subtitle
+• Section headers: navy blue bars with "CAMISA POLO" and "CAMISETA GOLA REDONDA" text
+• Rounded rectangle frames around each shirt section
+• Labels: "FRENTE" and "VERSO" under each shirt
+• Left sidebar icons in each section: TECIDO PREMIUM, CONFORTO E RESPIRABILIDADE, DURABILIDADE E RESISTÊNCIA, CAIMENTO PERFEITO — keep all 4 icons and labels exactly
+• Bottom features bar: ALTA QUALIDADE, PERSONALIZAÇÃO, PRAZO ÁGIL, ATENDIMENTO with icons
+• Footer: dark navy bar with roggauniformes.com.br, @roggauniformes
+${vendedor ? `• Footer seller name: change to "${vendedor}"` : "• Footer seller name: keep as is"}
+
+MODIFY ONLY — THE 4 SHIRT VIEWS:
+1. POLO FRONT (frente) — left shirt in top section
+2. POLO BACK (verso) — right shirt in top section
+3. T-SHIRT FRONT (frente) — left shirt in bottom section
+4. T-SHIRT BACK (verso) — right shirt in bottom section\n\n`;
 
   // === CORES ===
   if (tipoCores === "automatica") {
-    prompt += `SHIRT COLORS (automatic — extract from the provided client logo):\n`;
-    prompt += `- Use the logo's main color as the primary shirt color and the secondary logo color as accent.\n`;
-    if (detalhes.alternarCores) prompt += `- Polo shirt: primary color body/sleeves, secondary color collar/cuffs. T-shirt: swap — secondary color body, primary color accents.\n`;
-    else prompt += `- Apply the same color scheme to both shirts.\n`;
-    if (logoAnalysis) prompt += `Logo color analysis: ${logoAnalysis}\n`;
+    prompt += `SHIRT COLORS (automatic — based on the client logo):\n`;
+    prompt += `- Analyze the provided logo to extract the brand's main color (A) and secondary color (B).\n`;
+    if (detalhes.alternarCores) {
+      prompt += `- POLO: body and sleeves in color A, collar and cuffs in color B.\n`;
+      prompt += `- T-SHIRT: body and sleeves in color B, collar/accents in color A.\n`;
+    } else {
+      prompt += `- Both shirts: body in color A, accents/collar in color B.\n`;
+    }
+    prompt += `- If the logo represents a well-known brand, you may incorporate subtle brand-themed design elements or patterns on the t-shirt (like stripes, geometric shapes, or a brand-inspired graphic) while keeping the polo clean and professional.\n`;
+    if (logoAnalysis) prompt += `Logo analysis: ${logoAnalysis}\n`;
   } else {
     prompt += `SHIRT COLORS (specific):\n`;
     prompt += `POLO SHIRT:\n`;
@@ -116,12 +126,21 @@ The shirts are the ONLY elements you should modify. Everything else stays exactl
   prompt += `POLO SHIRT RULES (mandatory):
 - Exactly 2 buttons on the placket — no more, no less
 - The button placket (carcela), both inside and outside, must be the EXACT SAME color as the polo body
-- Collar must be PLAIN and CLEAN — absolutely no stripes, patterns or decorations on the collar
+- Collar: PLAIN and CLEAN — no stripes, no patterns, no decorations
+- Keep the realistic 3D shirt mockup style — photorealistic fabric texture
 
 T-SHIRT RULES (mandatory):
-- Collar must be PLAIN and CLEAN — no stripes or patterns (unless V-neck was requested above)
+- Collar: PLAIN and CLEAN — no stripes or patterns (unless V-neck was requested)
+- Keep the realistic 3D shirt mockup style — photorealistic fabric texture
 
-FINAL REMINDER: The template frame, background, all text, all icons, all decorative elements outside the shirts must remain 100% identical to the input image. Only recolor/modify the shirts themselves.`;
+LOGO PLACEMENT RULES:
+- On FRONT views: logo goes on the LEFT chest (from viewer's perspective)
+- On BACK views: logo goes centered on the upper back
+- Logos on sleeves: FRONT views only, never on back views
+- Red placement circles/rectangles in template are guides — place logo inside them
+
+FINAL CRITICAL REMINDER:
+The template is the base image. Every single element OUTSIDE the shirt silhouettes must remain pixel-identical to the input. Only the shirt fabric, color and logo placement should change.`;
 
   return prompt;
 }
