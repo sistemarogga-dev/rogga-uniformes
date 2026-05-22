@@ -15,112 +15,170 @@ interface ArteGerada {
   timestamp: number;
 }
 
+interface CoresDetalhadas {
+  poloTronco: string;
+  poloGola: string;
+  camisetaTronco: string;
+  camisetaMangas: string;
+  camisetaGola: string;
+  camisetaPunho: string;
+}
+
+function UploadBox({
+  label, hint, file, preview, onChange, onClear, accept
+}: {
+  label: string; hint: string; file: File | null; preview: string;
+  onChange: (f: File) => void; onClear: () => void; accept?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <div
+        className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors ${preview ? "border-[#C8102E] bg-red-50" : "border-gray-200 hover:border-[#C8102E] bg-white"}`}
+        onClick={() => ref.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onChange(f); }}
+      >
+        <input ref={ref} type="file" accept={accept || "image/*"} className="hidden"
+          onChange={(e) => e.target.files?.[0] && onChange(e.target.files[0])} />
+        {preview ? (
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={preview} alt={label} className="h-10 object-contain rounded" />
+            <div className="flex-1 text-left">
+              <p className="text-xs font-semibold text-gray-700 truncate">{file?.name}</p>
+              <p className="text-xs text-gray-400">Clique para trocar</p>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); onClear(); }} className="text-gray-400 hover:text-red-500 shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="py-2">
+            <Upload size={20} className="mx-auto text-gray-300 mb-1" />
+            <p className="text-xs text-gray-400">{hint}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <input
+        type="text" value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder="Ex: azul marinho, #003366..."
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white"
+      />
+    </div>
+  );
+}
+
 export default function GeradorPage() {
+  // Logos e imagens
   const [logo, setLogo] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string>("");
+  const [logoPreview, setLogoPreview] = useState("");
+  const [logo2, setLogo2] = useState<File | null>(null);
+  const [logo2Preview, setLogo2Preview] = useState("");
+  const [estampa, setEstampa] = useState<File | null>(null);
+  const [estampaPreview, setEstampaPreview] = useState("");
+
+  // Dados básicos
   const [cliente, setCliente] = useState("");
   const [vendedor, setVendedor] = useState("");
-  const [pecas, setPecas] = useState<string[]>(["polo"]);
-  const [cores, setCores] = useState<"automatica" | "detalhada">("automatica");
-  const [coresDetalhadas, setCoresDetalhadas] = useState("");
-  const [detalhes, setDetalhes] = useState<string[]>(["logo-costas"]);
-  const [observacoes, setObservacoes] = useState("");
+
+  // Tipo de combinação de cores
+  const [tipoCores, setTipoCores] = useState<"automatica" | "detalhada">("automatica");
+  const [cores, setCores] = useState<CoresDetalhadas>({
+    poloTronco: "", poloGola: "",
+    camisetaTronco: "", camisetaMangas: "", camisetaGola: "", camisetaPunho: "",
+  });
+
+  // Detalhes opcionais
+  const [detalhes, setDetalhes] = useState<Record<string, string | boolean>>({
+    alternarCores: true,
+    golaV: false,
+    mangaLonga: false,
+    usarEstampa: "",        // "polo" | "camiseta" | "ambas"
+    usarLogo2: "",          // "polo" | "camiseta" | "ambas"
+    mudarCoresEstampa: "",
+    punhoBarra: "",
+    bandeiras: "",
+    logo2OutroPeito: "",
+  });
+
+  // Estado
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [imagemAtual, setImagemAtual] = useState<ArteGerada | null>(null);
   const [historico, setHistorico] = useState<ArteGerada[]>([]);
   const [showPrompt, setShowPrompt] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLogoChange = useCallback((file: File) => {
-    setLogo(file);
-    const reader = new FileReader();
-    reader.onload = (e) => setLogoPreview(e.target?.result as string);
-    reader.readAsDataURL(file);
+  const handleLogo = useCallback((f: File) => {
+    setLogo(f);
+    const r = new FileReader(); r.onload = (e) => setLogoPreview(e.target?.result as string); r.readAsDataURL(f);
+  }, []);
+  const handleLogo2 = useCallback((f: File) => {
+    setLogo2(f);
+    const r = new FileReader(); r.onload = (e) => setLogo2Preview(e.target?.result as string); r.readAsDataURL(f);
+  }, []);
+  const handleEstampa = useCallback((f: File) => {
+    setEstampa(f);
+    const r = new FileReader(); r.onload = (e) => setEstampaPreview(e.target?.result as string); r.readAsDataURL(f);
   }, []);
 
-  const togglePeca = (peca: string) => {
-    setPecas((prev) =>
-      prev.includes(peca) ? prev.filter((p) => p !== peca) : [...prev, peca]
-    );
-  };
-
-  const toggleDetalhe = (d: string) => {
-    setDetalhes((prev) =>
-      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]
-    );
+  const setDetalhe = (key: string, value: string | boolean) => {
+    setDetalhes(prev => ({ ...prev, [key]: value }));
   };
 
   const gerarArte = useCallback(async () => {
-    if (pecas.length === 0) {
-      setErro("Selecione pelo menos uma peça.");
-      return;
-    }
-    if (!cliente.trim()) {
-      setErro("Informe o nome do cliente.");
-      return;
-    }
-
-    setGerando(true);
-    setErro("");
-    setSucesso("");
-
+    if (!cliente.trim()) { setErro("Informe o nome do cliente."); return; }
+    setGerando(true); setErro(""); setSucesso("");
     try {
       const fd = new FormData();
       if (logo) fd.append("logo", logo);
+      if (logo2) fd.append("logo2", logo2);
+      if (estampa) fd.append("estampa", estampa);
       fd.append("cliente", cliente);
       fd.append("vendedor", vendedor);
-      pecas.forEach((p) => fd.append("pecas", p));
-      fd.append("cores", cores);
-      fd.append("coresDetalhadas", coresDetalhadas);
-      detalhes.forEach((d) => fd.append("detalhes", d));
-      fd.append("observacoes", observacoes);
+      fd.append("tipoCores", tipoCores);
+      fd.append("cores", JSON.stringify(cores));
+      fd.append("detalhes", JSON.stringify(detalhes));
 
       const res = await fetch("/api/gerar", { method: "POST", body: fd });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      const nova: ArteGerada = {
-        url: data.url,
-        prompt: data.prompt,
-        cliente,
-        vendedor,
-        timestamp: Date.now(),
-      };
+      const nova: ArteGerada = { url: data.url, prompt: data.prompt, cliente, vendedor, timestamp: Date.now() };
       setImagemAtual(nova);
-      setHistorico((prev) => [nova, ...prev.slice(0, 11)]);
+      setHistorico(prev => [nova, ...prev.slice(0, 11)]);
       setSucesso("Arte gerada com sucesso!");
     } catch (e: unknown) {
       setErro(e instanceof Error ? e.message : "Erro ao gerar arte.");
     } finally {
       setGerando(false);
     }
-  }, [logo, cliente, vendedor, pecas, cores, coresDetalhadas, detalhes, observacoes]);
+  }, [logo, logo2, estampa, cliente, vendedor, tipoCores, cores, detalhes]);
 
   const baixarImagem = useCallback(async (url: string, nome: string) => {
     try {
       const a = document.createElement("a");
       a.download = `rogga-${nome}-${Date.now()}.png`;
-      if (url.startsWith("data:")) {
-        a.href = url;
-        a.click();
-      } else {
-        const res = await fetch(url);
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        a.href = blobUrl;
-        a.click();
-        URL.revokeObjectURL(blobUrl);
+      if (url.startsWith("data:")) { a.href = url; a.click(); }
+      else {
+        const res = await fetch(url); const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob); a.href = blobUrl; a.click(); URL.revokeObjectURL(blobUrl);
       }
-    } catch {
-      setErro("Erro ao baixar. Tente clique direito > Salvar imagem.");
-    }
+    } catch { setErro("Erro ao baixar. Tente clique direito > Salvar imagem."); }
   }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-[#C8102E] text-white shadow-md sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <Link href="/" className="flex items-center gap-1 text-red-200 hover:text-white transition-colors text-sm">
@@ -134,193 +192,152 @@ export default function GeradorPage() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
 
         {/* ===== FORMULÁRIO ===== */}
         <div className="space-y-5">
           <div>
             <h2 className="text-xl font-bold text-gray-800">Novo Pedido de Arte</h2>
-            <p className="text-gray-500 text-sm">Preencha os dados do cliente e gere a arte</p>
+            <p className="text-gray-500 text-sm">Preencha os dados e gere a proposta</p>
           </div>
 
-          {/* Upload de Logo */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Logo do Cliente</label>
-            <div
-              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${logoPreview ? "border-[#C8102E] bg-red-50" : "border-gray-300 hover:border-[#C8102E] bg-white"}`}
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (file) handleLogoChange(file);
-              }}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleLogoChange(e.target.files[0])}
-              />
-              {logoPreview ? (
-                <div className="flex items-center gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={logoPreview} alt="Logo" className="h-16 object-contain rounded" />
-                  <div className="flex-1 text-left">
-                    <p className="text-sm font-semibold text-gray-700">{logo?.name}</p>
-                    <p className="text-xs text-gray-400">Clique para trocar</p>
-                  </div>
-                  <button onClick={(e) => { e.stopPropagation(); setLogo(null); setLogoPreview(""); }}
-                    className="text-gray-400 hover:text-red-500">
-                    <X size={18} />
-                  </button>
-                </div>
-              ) : (
-                <div className="py-4">
-                  <Upload size={32} className="mx-auto text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500">Arraste o logo aqui ou <span className="text-[#C8102E] font-semibold">clique para selecionar</span></p>
-                  <p className="text-xs text-gray-400 mt-1">PNG, JPG, SVG</p>
-                </div>
-              )}
-            </div>
+          {/* Logos e Imagens */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-bold text-gray-700">📎 Imagens</p>
+            <UploadBox label="Logo Principal *" hint="Arraste ou clique — PNG, JPG, SVG"
+              file={logo} preview={logoPreview} onChange={handleLogo} onClear={() => { setLogo(null); setLogoPreview(""); }} />
+            <UploadBox label="2º Logo (opcional)" hint="Segundo logotipo do cliente"
+              file={logo2} preview={logo2Preview} onChange={handleLogo2} onClear={() => { setLogo2(null); setLogo2Preview(""); }} />
+            <UploadBox label="Estampa (opcional)" hint="Imagem para usar como estampa"
+              file={estampa} preview={estampaPreview} onChange={handleEstampa} onClear={() => { setEstampa(null); setEstampaPreview(""); }} />
           </div>
 
           {/* Cliente e Vendedor */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                <Building2 size={14} className="inline mr-1" />Cliente / Empresa
-              </label>
-              <input
-                type="text"
-                value={cliente}
-                onChange={(e) => setCliente(e.target.value)}
+              <label className="block text-sm font-semibold text-gray-700 mb-1"><Building2 size={13} className="inline mr-1" />Cliente / Empresa</label>
+              <input type="text" value={cliente} onChange={(e) => setCliente(e.target.value)}
                 placeholder="Nome da empresa"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white"
-              />
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                <User size={14} className="inline mr-1" />Vendedor
-              </label>
-              <input
-                type="text"
-                value={vendedor}
-                onChange={(e) => setVendedor(e.target.value)}
+              <label className="block text-sm font-semibold text-gray-700 mb-1"><User size={13} className="inline mr-1" />Vendedor(a)</label>
+              <input type="text" value={vendedor} onChange={(e) => setVendedor(e.target.value)}
                 placeholder="Nome do vendedor"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white"
-              />
-            </div>
-          </div>
-
-          {/* Peças */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Peças do Pedido</label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: "polo", label: "Camisa Polo" },
-                { id: "manga-curta", label: "Camiseta M. Curta" },
-                { id: "manga-longa", label: "Camiseta M. Longa" },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => togglePeca(p.id)}
-                  className={`py-3 px-2 rounded-xl border-2 text-sm font-semibold transition-all ${pecas.includes(p.id) ? "border-[#C8102E] bg-red-50 text-[#C8102E]" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"}`}
-                >
-                  {p.label}
-                </button>
-              ))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white" />
             </div>
           </div>
 
           {/* Combinação de Cores */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Combinação de Cores</label>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button
-                onClick={() => setCores("automatica")}
-                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${cores === "automatica" ? "border-[#C8102E] bg-red-50 text-[#C8102E]" : "border-gray-200 bg-white text-gray-500"}`}
-              >
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-4">
+            <p className="text-sm font-bold text-gray-700">🎨 Combinação de Cores</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setTipoCores("automatica")}
+                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${tipoCores === "automatica" ? "border-[#C8102E] bg-red-50 text-[#C8102E]" : "border-gray-200 text-gray-500"}`}>
                 🎨 Automática
                 <span className="block text-xs font-normal opacity-70">Baseada no logotipo</span>
               </button>
-              <button
-                onClick={() => setCores("detalhada")}
-                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${cores === "detalhada" ? "border-[#C8102E] bg-red-50 text-[#C8102E]" : "border-gray-200 bg-white text-gray-500"}`}
-              >
+              <button onClick={() => setTipoCores("detalhada")}
+                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${tipoCores === "detalhada" ? "border-[#C8102E] bg-red-50 text-[#C8102E]" : "border-gray-200 text-gray-500"}`}>
                 ✏️ Detalhada
-                <span className="block text-xs font-normal opacity-70">Especificar cores</span>
+                <span className="block text-xs font-normal opacity-70">Especificar cada peça</span>
               </button>
             </div>
-            {cores === "detalhada" && (
-              <textarea
-                value={coresDetalhadas}
-                onChange={(e) => setCoresDetalhadas(e.target.value)}
-                rows={3}
-                placeholder="Ex: Polo azul marinho com gola branca, camiseta cinza com detalhes em laranja..."
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white resize-none"
-              />
+
+            {tipoCores === "automatica" && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={detalhes.alternarCores as boolean}
+                  onChange={(e) => setDetalhe("alternarCores", e.target.checked)}
+                  className="accent-[#C8102E] w-4 h-4" />
+                <span className="text-sm text-gray-700">Alternar cores entre polo e camiseta</span>
+              </label>
+            )}
+
+            {tipoCores === "detalhada" && (
+              <div className="space-y-3">
+                <div className="border border-gray-100 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Camisa Polo</p>
+                  <ColorField label="Tronco e mangas" value={cores.poloTronco} onChange={(v) => setCores(p => ({ ...p, poloTronco: v }))} />
+                  <ColorField label="Gola e punhos" value={cores.poloGola} onChange={(v) => setCores(p => ({ ...p, poloGola: v }))} />
+                </div>
+                <div className="border border-gray-100 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Camiseta</p>
+                  <ColorField label="Tronco" value={cores.camisetaTronco} onChange={(v) => setCores(p => ({ ...p, camisetaTronco: v }))} />
+                  <ColorField label="Mangas" value={cores.camisetaMangas} onChange={(v) => setCores(p => ({ ...p, camisetaMangas: v }))} />
+                  <ColorField label="Gola" value={cores.camisetaGola} onChange={(v) => setCores(p => ({ ...p, camisetaGola: v }))} />
+                  <ColorField label="Punho" value={cores.camisetaPunho} onChange={(v) => setCores(p => ({ ...p, camisetaPunho: v }))} />
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Detalhes */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Detalhes da Arte</label>
-            <div className="space-y-2">
-              {[
-                { id: "alternar-cores", label: "Alternar cores entre as peças" },
-                { id: "isotipo-peito", label: "Isotipo/ícone nos peitos" },
-                { id: "logo-costas", label: "Logomarca completa nas costas" },
-                { id: "logo-manga", label: "Logomarca nas mangas (vertical)" },
-                { id: "estampa-barriga", label: "Estampa na barriga da camiseta" },
-                { id: "estampa-abstrata", label: "Estampa abstrata agressiva" },
-              ].map((d) => (
-                <label key={d.id} className="flex items-center gap-3 cursor-pointer group">
-                  <div
-                    onClick={() => toggleDetalhe(d.id)}
-                    className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${detalhes.includes(d.id) ? "border-[#C8102E] bg-[#C8102E]" : "border-gray-300 bg-white group-hover:border-[#C8102E]"}`}
-                  >
-                    {detalhes.includes(d.id) && <span className="text-white text-xs">✓</span>}
-                  </div>
-                  <span className="text-sm text-gray-700" onClick={() => toggleDetalhe(d.id)}>{d.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+          {/* Detalhes Opcionais */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-bold text-gray-700">⚙️ Detalhes Opcionais</p>
 
-          {/* Observações */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Observações Adicionais</label>
-            <textarea
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              rows={3}
-              placeholder="Ex: A cor predominante deve ser laranja. Coloque o capacete como estampa na barriga..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white resize-none"
-            />
+            <CheckItem label="Gola V na camiseta"
+              checked={detalhes.golaV as boolean} onChange={(v) => setDetalhe("golaV", v)} />
+
+            <CheckItem label="Manga longa com punhos na mesma cor das mangas"
+              checked={detalhes.mangaLonga as boolean} onChange={(v) => setDetalhe("mangaLonga", v)} />
+
+            <SelectItem label="Usar estampa anexada em:"
+              value={detalhes.usarEstampa as string} onChange={(v) => setDetalhe("usarEstampa", v)}
+              options={[{ value: "", label: "Não usar" }, { value: "polo", label: "Polo" }, { value: "camiseta", label: "Camiseta" }, { value: "ambas", label: "Ambas" }]} />
+
+            {detalhes.usarEstampa && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Mudar cores da estampa para:</label>
+                <input type="text" value={detalhes.mudarCoresEstampa as string}
+                  onChange={(e) => setDetalhe("mudarCoresEstampa", e.target.value)}
+                  placeholder="Ex: laranja e preto (deixe vazio para manter)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white" />
+              </div>
+            )}
+
+            <SelectItem label="Usar 2º logo em:"
+              value={detalhes.usarLogo2 as string} onChange={(v) => setDetalhe("usarLogo2", v)}
+              options={[{ value: "", label: "Não usar" }, { value: "polo", label: "Polo" }, { value: "camiseta", label: "Camiseta" }, { value: "ambas", label: "Ambas" }]} />
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Punho com fina barra em: (ex: "polo, cor vermelha")</label>
+              <input type="text" value={detalhes.punhoBarra as string}
+                onChange={(e) => setDetalhe("punhoBarra", e.target.value)}
+                placeholder="Ex: ambas as camisas, barra dourada"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Bandeiras nos braços (somente frente):</label>
+              <input type="text" value={detalhes.bandeiras as string}
+                onChange={(e) => setDetalhe("bandeiras", e.target.value)}
+                placeholder="Ex: bandeira do Brasil nos dois braços da camiseta"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">2º logo no outro peito em:</label>
+              <input type="text" value={detalhes.logo2OutroPeito as string}
+                onChange={(e) => setDetalhe("logo2OutroPeito", e.target.value)}
+                placeholder="Ex: polo e camiseta"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white" />
+            </div>
           </div>
 
           {/* Alertas */}
           {erro && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              <AlertCircle size={16} className="mt-0.5 shrink-0" />
-              <span>{erro}</span>
+              <AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{erro}</span>
             </div>
           )}
           {sucesso && (
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">
-              <CheckCircle2 size={16} className="shrink-0" />
-              <span>{sucesso}</span>
+              <CheckCircle2 size={16} className="shrink-0" /><span>{sucesso}</span>
             </div>
           )}
 
-          {/* Botão Gerar */}
-          <button
-            onClick={gerarArte}
-            disabled={gerando}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#C8102E] text-white font-bold text-base hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-          >
+          <button onClick={gerarArte} disabled={gerando}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#C8102E] text-white font-bold text-base hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
             {gerando ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
             {gerando ? "Gerando arte... aguarde até 60s" : "Gerar Arte"}
           </button>
@@ -338,7 +355,7 @@ export default function GeradorPage() {
             <img
               src={imagemAtual ? imagemAtual.url : "/template.png"}
               alt={imagemAtual ? "Arte gerada" : "Template padrão ROGGA"}
-              className="w-full object-contain max-h-[600px]"
+              className="w-full object-contain max-h-[650px]"
             />
             <div className="p-4 space-y-3">
               {imagemAtual ? (
@@ -346,34 +363,26 @@ export default function GeradorPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-semibold text-gray-800 text-sm">{imagemAtual.cliente}</p>
-                      {imagemAtual.vendedor && <p className="text-xs text-gray-400">Vendedor: {imagemAtual.vendedor}</p>}
+                      {imagemAtual.vendedor && <p className="text-xs text-gray-400">Vendedor(a): {imagemAtual.vendedor}</p>}
                     </div>
-                    <button
-                      onClick={() => baixarImagem(imagemAtual.url, imagemAtual.cliente)}
-                      className="flex items-center gap-2 bg-[#C8102E] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-red-700 transition-colors"
-                    >
+                    <button onClick={() => baixarImagem(imagemAtual.url, imagemAtual.cliente)}
+                      className="flex items-center gap-2 bg-[#C8102E] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-red-700 transition-colors">
                       <Download size={14} /> Baixar Arte
                     </button>
                   </div>
-                  <button
-                    onClick={() => setShowPrompt(!showPrompt)}
-                    className="text-xs text-gray-400 underline"
-                  >
-                    {showPrompt ? "Ocultar" : "Ver"} prompt gerado
+                  <button onClick={() => setShowPrompt(!showPrompt)} className="text-xs text-gray-400 underline">
+                    {showPrompt ? "Ocultar" : "Ver"} prompt enviado
                   </button>
-                  {showPrompt && (
-                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 leading-relaxed">{imagemAtual.prompt}</p>
-                  )}
+                  {showPrompt && <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 leading-relaxed">{imagemAtual.prompt}</p>}
                 </>
               ) : (
                 <p className="text-xs text-gray-400 text-center">
-                  Template padrão — preencha o formulário e clique em <strong className="text-gray-600">Gerar Arte</strong>
+                  Preencha o formulário e clique em <strong className="text-gray-600">Gerar Arte</strong>
                 </p>
               )}
             </div>
           </div>
 
-          {/* Histórico */}
           {historico.length > 1 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Histórico desta sessão</h3>
@@ -383,10 +392,8 @@ export default function GeradorPage() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={arte.url} alt={arte.cliente} className="w-full aspect-[9/16] object-cover hover:opacity-90 transition-opacity" />
                     <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">{arte.cliente}</div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); baixarImagem(arte.url, arte.cliente); }}
-                      className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); baixarImagem(arte.url, arte.cliente); }}
+                      className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                       <Download size={12} />
                     </button>
                   </div>
@@ -400,6 +407,30 @@ export default function GeradorPage() {
       <footer className="bg-[#1a1a2e] text-gray-400 text-center py-4 text-xs">
         © {new Date().getFullYear()} ROGGA UNIFORMES — Gerador de Artes com IA
       </footer>
+    </div>
+  );
+}
+
+function CheckItem({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-[#C8102E] w-4 h-4" />
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
+  );
+}
+
+function SelectItem({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white">
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
     </div>
   );
 }

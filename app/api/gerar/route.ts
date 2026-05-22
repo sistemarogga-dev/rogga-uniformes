@@ -5,93 +5,117 @@ import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
 
-function buildEditPrompt(params: {
-  cliente: string;
-  vendedor: string;
-  pecas: string[];
-  cores: string;
-  coresDetalhadas: string;
-  detalhes: string[];
-  observacoes: string;
-  logoAnalysis: string;
-  temLogo: boolean;
+interface CoresDetalhadas {
+  poloTronco: string; poloGola: string;
+  camisetaTronco: string; camisetaMangas: string; camisetaGola: string; camisetaPunho: string;
+}
+
+interface Detalhes {
+  alternarCores: boolean;
+  golaV: boolean;
+  mangaLonga: boolean;
+  usarEstampa: string;
+  usarLogo2: string;
+  mudarCoresEstampa: string;
+  punhoBarra: string;
+  bandeiras: string;
+  logo2OutroPeito: string;
+}
+
+function buildPrompt(params: {
+  cliente: string; vendedor: string; tipoCores: string;
+  cores: CoresDetalhadas; detalhes: Detalhes; logoAnalysis: string;
+  temLogo: boolean; temLogo2: boolean; temEstampa: boolean;
 }): string {
-  const { cliente, vendedor, cores, coresDetalhadas, detalhes, observacoes, logoAnalysis, temLogo } = params;
+  const { cliente, vendedor, tipoCores, cores, detalhes, logoAnalysis, temLogo, temLogo2, temEstampa } = params;
 
-  const alternarCores = detalhes.includes("alternar-cores");
-  const isotipoNoPeito = detalhes.includes("isotipo-peito");
-  const logoNasCostas = detalhes.includes("logo-costas");
-  const logoNasManga = detalhes.includes("logo-manga");
-  const estampaBarriga = detalhes.includes("estampa-barriga");
-  const estampaAbstrata = detalhes.includes("estampa-abstrata");
+  let prompt = `Edit this ROGGA UNIFORMES uniform proposal template. Size: 1080x1920 (9:16). Client: "${cliente}".\n\n`;
 
-  let prompt = `Edit this ROGGA UNIFORMES uniform proposal template for client "${cliente}". Make ONLY the following changes and preserve everything else exactly:\n\n`;
-
-  // Cores
-  if (cores === "detalhada" && coresDetalhadas) {
-    prompt += `1. SHIRT COLORS: ${coresDetalhadas}. `;
-  } else if (logoAnalysis) {
-    prompt += `1. SHIRT COLORS: Choose colors based on the client logo analysis: ${logoAnalysis}. `;
-    if (alternarCores) {
-      prompt += `Alternate the main and secondary colors between the polo shirt and the t-shirt. `;
-    }
+  // === CORES ===
+  if (tipoCores === "automatica") {
+    prompt += `COLORS: Automatic color combination based on the client logo analysis below. `;
+    if (detalhes.alternarCores) prompt += `Alternate the main and secondary colors between the polo shirt and the t-shirt. `;
+    if (logoAnalysis) prompt += `\nLogo analysis: ${logoAnalysis}`;
   } else {
-    prompt += `1. SHIRT COLORS: Choose professional colors suitable for corporate uniforms. `;
-  }
-  prompt += `IMPORTANT: The polo shirt carcela (button placket, both inside and outside) must be exactly the same color as the polo shirt body. The polo must have exactly 2 buttons. No stripes or patterns on any collar.\n\n`;
-
-  // Logo
-  if (temLogo) {
-    prompt += `2. LOGO PLACEMENT: Use the client logo provided as reference image.\n`;
-    if (isotipoNoPeito) {
-      prompt += `   - Place the logo isotipo/icon inside the red circle on the polo front chest (replacing "Logo" text)\n`;
-      prompt += `   - Place the logo isotipo/icon inside the red circle on the t-shirt front chest (replacing "Logo" text)\n`;
-    } else {
-      prompt += `   - Place the client logo inside the red circle on the polo front chest (replacing "Logo" text)\n`;
-      prompt += `   - Place the client logo inside the red circle on the t-shirt front chest (replacing "Logo" text)\n`;
-    }
-    if (logoNasCostas !== false) {
-      prompt += `   - Place the full client logotype inside the red rectangle on the polo back (replacing "Logo" text)\n`;
-      prompt += `   - Place the full client logotype inside the red rectangle on the t-shirt back (replacing "Logo" text)\n`;
-    }
-    if (logoNasManga) {
-      prompt += `   - Place the client logo on the sleeves vertically, ONLY on the FRONT view sleeves (frente). Do NOT add logo on the back view sleeves (verso).\n`;
-    }
-  } else {
-    prompt += `2. LOGO PLACEHOLDER: Keep the red circle and rectangle "Logo" placeholders as they are, but label them with "${cliente}".\n`;
+    prompt += `COLORS - Detailed combination:\n`;
+    prompt += `POLO:\n`;
+    if (cores.poloTronco) prompt += `- Polo body and sleeves: ${cores.poloTronco}\n`;
+    if (cores.poloGola) prompt += `- Polo collar and cuffs: ${cores.poloGola}\n`;
+    prompt += `T-SHIRT:\n`;
+    if (cores.camisetaTronco) prompt += `- T-shirt body: ${cores.camisetaTronco}\n`;
+    if (cores.camisetaMangas) prompt += `- T-shirt sleeves: ${cores.camisetaMangas}\n`;
+    else if (cores.camisetaTronco) prompt += `- T-shirt sleeves: same as body (${cores.camisetaTronco})\n`;
+    if (cores.camisetaGola) prompt += `- T-shirt collar: ${cores.camisetaGola}\n`;
+    if (cores.camisetaPunho) prompt += `- T-shirt cuff: ${cores.camisetaPunho}\n`;
   }
   prompt += `\n`;
 
-  // Extras
-  if (estampaBarriga) {
-    prompt += `3. Add a bold graphic print on the belly/lower front area of the t-shirt.\n`;
-  }
-  if (estampaAbstrata) {
-    prompt += `${estampaBarriga ? "4" : "3"}. Add an aggressive abstract pattern that complements the shirt colors.\n`;
-  }
-
-  // Vendedor
-  if (vendedor) {
-    prompt += `\nSELLER NAME: Replace the seller name in the bottom bar with "${vendedor}".\n`;
+  // === LOGOS ===
+  prompt += `LOGO PLACEMENT:\n`;
+  if (temLogo) {
+    prompt += `- Remove background from the client logo (image provided).\n`;
+    prompt += `- Place the client logo inside the red circle on the POLO FRONT chest (replacing "Logo" text).\n`;
+    prompt += `- Place the full client logo inside the red rectangle on the POLO BACK (replacing "Logo" text).\n`;
+    prompt += `- Place the client logo inside the red circle on the T-SHIRT FRONT chest (replacing "Logo" text).\n`;
+    prompt += `- Place the full client logo inside the red rectangle on the T-SHIRT BACK (replacing "Logo" text).\n`;
   }
 
-  // Observações
-  if (observacoes) {
-    prompt += `\nADDITIONAL DETAILS: ${observacoes}\n`;
+  // === DETALHES OPCIONAIS ===
+  const detalhesList: string[] = [];
+
+  if (detalhes.golaV) detalhesList.push("Make the t-shirt with a V-neck collar instead of round neck.");
+
+  if (detalhes.mangaLonga) detalhesList.push("Make the t-shirt with long sleeves, with cuffs in the same color as the sleeves.");
+
+  if (temEstampa && detalhes.usarEstampa) {
+    let estampaTarget = "";
+    if (detalhes.usarEstampa === "polo") estampaTarget = "the polo shirt";
+    else if (detalhes.usarEstampa === "camiseta") estampaTarget = "the t-shirt";
+    else estampaTarget = "both shirts";
+    let estampaDesc = `Use the provided stamp/design image on ${estampaTarget}.`;
+    if (detalhes.mudarCoresEstampa) estampaDesc += ` Change the stamp colors to: ${detalhes.mudarCoresEstampa}.`;
+    detalhesList.push(estampaDesc);
   }
 
+  if (temLogo2 && detalhes.usarLogo2) {
+    let logo2Target = "";
+    if (detalhes.usarLogo2 === "polo") logo2Target = "the polo shirt";
+    else if (detalhes.usarLogo2 === "camiseta") logo2Target = "the t-shirt";
+    else logo2Target = "both shirts";
+    detalhesList.push(`Use the second provided logo on ${logo2Target}.`);
+  }
+
+  if (detalhes.punhoBarra) detalhesList.push(`Add a thin bar/stripe on the cuffs of: ${detalhes.punhoBarra}.`);
+
+  if (detalhes.bandeiras) detalhesList.push(`Add flags on the arms (FRONT view sleeves only, not on back view): ${detalhes.bandeiras}.`);
+
+  if (detalhes.logo2OutroPeito && temLogo2) detalhesList.push(`Add the second logo on the other chest (right side) on: ${detalhes.logo2OutroPeito}.`);
+
+  if (detalhesList.length > 0) {
+    prompt += `\nADDITIONAL DETAILS:\n`;
+    detalhesList.forEach((d, i) => { prompt += `${i + 1}. ${d}\n`; });
+  }
+
+  // === VENDEDOR ===
+  if (vendedor) prompt += `\nSELLER: Replace the seller name in the bottom bar with "${vendedor}".\n`;
+
+  // === REGRAS FIXAS ===
   prompt += `
-STRICT RULES - DO NOT CHANGE:
-- ROGGA UNIFORMES logo and branding at the top
-- The overall template layout and structure
-- The golden decorative borders and background
-- The section labels (CAMISA POLO, CAMISETA GOLA REDONDA, FRENTE, VERSO)
-- The feature icons on the left (Tecido Premium, Conforto, Durabilidade, Caimento)
-- The bottom bar with website and instagram info
-- The "PROPOSTA DE UNIFORMES" title and subtitle
-- Polo shirt must have exactly 2 buttons, clean collar with NO stripes or patterns
-- T-shirt must have a clean round collar with NO stripes or patterns
-- The carcela of the polo (inside and outside) must be the same color as the polo body`;
+STRICT RULES - PRESERVE EXACTLY:
+- ROGGA UNIFORMES logo and all branding at the top (do not modify)
+- Template layout, structure, golden borders, cream/white background
+- Section labels: CAMISA POLO, CAMISETA GOLA REDONDA, FRENTE, VERSO
+- Feature icons on the left side of each section
+- Bottom bar: roggauniformes.com.br, @roggauniformes (only update seller name)
+- "PROPOSTA DE UNIFORMES" title and "CONFORTO, QUALIDADE E PROFISSIONALISMO" subtitle
+
+POLO RULES:
+- Exactly 2 buttons only
+- Polo carcela (button placket, inside AND outside) must be the SAME color as the polo body
+- Clean collar with NO stripes, NO patterns, NO decorations
+
+T-SHIRT RULES:
+- Clean collar with NO stripes, NO patterns, NO decorations (unless V-neck was requested)`;
 
   return prompt;
 }
@@ -102,73 +126,67 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const logo = formData.get("logo") as File | null;
+    const logo2 = formData.get("logo2") as File | null;
+    const estampa = formData.get("estampa") as File | null;
     const cliente = (formData.get("cliente") as string) || "";
     const vendedor = (formData.get("vendedor") as string) || "";
-    const pecas = formData.getAll("pecas") as string[];
-    const cores = (formData.get("cores") as string) || "automatica";
-    const coresDetalhadas = (formData.get("coresDetalhadas") as string) || "";
-    const detalhes = formData.getAll("detalhes") as string[];
-    const observacoes = (formData.get("observacoes") as string) || "";
+    const tipoCores = (formData.get("tipoCores") as string) || "automatica";
+    const cores: CoresDetalhadas = JSON.parse((formData.get("cores") as string) || "{}");
+    const detalhes: Detalhes = JSON.parse((formData.get("detalhes") as string) || "{}");
 
-    if (!cliente.trim()) {
-      return Response.json({ error: "Informe o nome do cliente." }, { status: 400 });
-    }
+    if (!cliente.trim()) return Response.json({ error: "Informe o nome do cliente." }, { status: 400 });
 
-    // Verificar se o template existe
+    // Verificar template
     const templatePath = path.join(process.cwd(), "public", "template.png");
     if (!fs.existsSync(templatePath)) {
-      return Response.json({ error: "Template não encontrado. Salve o arquivo template.png na pasta public do projeto." }, { status: 500 });
+      return Response.json({ error: "Template não encontrado. Salve o arquivo template.png na pasta public." }, { status: 500 });
     }
 
     // Analisar logo com GPT-4o vision
     let logoAnalysis = "";
-    let logoBase64 = "";
-    let logoMime = "";
+    let logoBuffer: Buffer | null = null;
+    let logo2Buffer: Buffer | null = null;
+    let estampaBuffer: Buffer | null = null;
 
     if (logo && logo.size > 0) {
-      const bytes = await logo.arrayBuffer();
-      logoBase64 = Buffer.from(bytes).toString("base64");
-      logoMime = logo.type || "image/png";
-
+      logoBuffer = Buffer.from(await logo.arrayBuffer());
+      const base64 = logoBuffer.toString("base64");
+      const mime = logo.type || "image/png";
       const vision = await openai.chat.completions.create({
         model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: `data:${logoMime};base64,${logoBase64}` } },
-              {
-                type: "text",
-                text: "Analyze this company logo: 1) Main and secondary colors with names and hex codes, 2) Visual style (modern, classic, sporty, industrial, etc), 3) Company sector/industry if identifiable. Be concise.",
-              },
-            ],
-          },
-        ],
+        messages: [{
+          role: "user", content: [
+            { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } },
+            { type: "text", text: "Analyze this company logo: 1) Main and secondary colors with names and hex codes, 2) Visual style, 3) Company sector/industry. Be concise." }
+          ]
+        }],
         max_tokens: 300,
       });
       logoAnalysis = vision.choices[0]?.message?.content ?? "";
     }
 
+    if (logo2 && logo2.size > 0) logo2Buffer = Buffer.from(await logo2.arrayBuffer());
+    if (estampa && estampa.size > 0) estampaBuffer = Buffer.from(await estampa.arrayBuffer());
+
     // Montar prompt
-    const editPrompt = buildEditPrompt({
-      cliente, vendedor, pecas, cores, coresDetalhadas,
-      detalhes, observacoes, logoAnalysis, temLogo: !!(logo && logo.size > 0),
+    const editPrompt = buildPrompt({
+      cliente, vendedor, tipoCores, cores, detalhes, logoAnalysis,
+      temLogo: !!logoBuffer, temLogo2: !!logo2Buffer, temEstampa: !!estampaBuffer,
     });
 
     // Preparar imagens para o edit
-    const templateBuffer = fs.readFileSync(templatePath);
-    const templateFile = await toFile(templateBuffer, "template.png", { type: "image/png" });
+    const templateBuf = fs.readFileSync(templatePath);
+    const images: Parameters<typeof toFile>[0][] = [templateBuf];
+    const names = ["template.png"];
+    const types = ["image/png"];
 
-    let imageInput: Parameters<typeof openai.images.edit>[0]["image"];
+    if (logoBuffer) { images.push(logoBuffer); names.push("logo.png"); types.push(logo?.type || "image/png"); }
+    if (logo2Buffer) { images.push(logo2Buffer); names.push("logo2.png"); types.push(logo2?.type || "image/png"); }
+    if (estampaBuffer) { images.push(estampaBuffer); names.push("estampa.png"); types.push(estampa?.type || "image/png"); }
 
-    if (logo && logo.size > 0) {
-      // Passa template + logo do cliente
-      const logoBuffer = Buffer.from(logoBase64, "base64");
-      const logoFile = await toFile(logoBuffer, "logo.png", { type: logoMime });
-      imageInput = [templateFile, logoFile];
-    } else {
-      imageInput = templateFile;
-    }
+    const imageFiles = await Promise.all(images.map((buf, i) => toFile(buf as Buffer, names[i], { type: types[i] })));
+
+    const imageInput = imageFiles.length === 1 ? imageFiles[0] : imageFiles;
 
     // Editar template
     const response = await openai.images.edit({
@@ -181,40 +199,31 @@ export async function POST(request: Request) {
     } as Parameters<typeof openai.images.edit>[0]) as { data?: Array<{ url?: string; b64_json?: string }> };
 
     const item = response.data?.[0];
-    let imageBuffer: Buffer | undefined;
+    let imageBuffer2: Buffer | undefined;
 
     if (item?.b64_json) {
-      imageBuffer = Buffer.from(item.b64_json, "base64");
+      imageBuffer2 = Buffer.from(item.b64_json, "base64");
     } else if (item?.url) {
       const imgRes = await fetch(item.url);
-      imageBuffer = Buffer.from(await imgRes.arrayBuffer());
+      imageBuffer2 = Buffer.from(await imgRes.arrayBuffer());
     }
 
-    if (!imageBuffer) {
-      return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
-    }
+    if (!imageBuffer2) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
 
-    // Etapa 1: Ajustar para 1080x1920 sem cortes (contain + fundo branco)
-    const resized = await sharp(imageBuffer)
-      .resize(1080, 1920, {
-        fit: "contain",
-        position: "center",
-        background: { r: 255, g: 255, b: 255, alpha: 1 },
-      })
+    // Etapa 1: Ajustar para 1080x1920 sem cortes
+    const resized = await sharp(imageBuffer2)
+      .resize(1080, 1920, { fit: "contain", position: "center", background: { r: 255, g: 255, b: 255, alpha: 1 } })
       .toBuffer();
 
-    // Etapa 2: Upscale 2x → 2160x3840 (alta resolução para impressão)
+    // Etapa 2: Upscale 2x → 2160x3840
     const upscaled = await sharp(resized)
-      .resize(2160, 3840, {
-        fit: "fill",
-        kernel: sharp.kernel.lanczos3,
-      })
+      .resize(2160, 3840, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 6, quality: 100 })
       .toBuffer();
 
     const url = `data:image/png;base64,${upscaled.toString("base64")}`;
-
     return Response.json({ url, prompt: editPrompt, logoAnalysis });
+
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro desconhecido.";
     return Response.json({ error: message }, { status: 500 });
