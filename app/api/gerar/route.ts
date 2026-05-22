@@ -47,8 +47,9 @@ PRESERVE UNCHANGED — PIXEL-PERFECT:
 • Labels: "FRENTE" and "VERSO" under each shirt
 • Left sidebar icons in each section: TECIDO PREMIUM, CONFORTO E RESPIRABILIDADE, DURABILIDADE E RESISTÊNCIA, CAIMENTO PERFEITO — keep all 4 icons and labels exactly
 • Bottom features bar: ALTA QUALIDADE, PERSONALIZAÇÃO, PRAZO ÁGIL, ATENDIMENTO with icons
-• Footer: dark navy bar with roggauniformes.com.br, @roggauniformes
-${vendedor ? `• Footer seller name: change to "${vendedor}"` : "• Footer seller name: keep as is"}
+• Footer: the DARK NAVY BLUE bar at the very bottom — MUST be preserved with globe icon + "roggauniformes.com.br", Instagram icon + "@roggauniformes", and person icon + seller name — this entire bar is mandatory
+${vendedor ? `• Footer seller name: inside the footer bar, change the seller name to "${vendedor}"` : "• Footer seller name: keep exactly as shown in the template"}
+• Corner ornaments: the golden diagonal accent lines in the top-left and top-right corners must remain unchanged
 
 MODIFY ONLY — THE 4 SHIRT VIEWS:
 1. POLO FRONT (frente) — left shirt in top section
