@@ -200,22 +200,38 @@ export async function POST(request: Request) {
       temLogo: !!logoBuffer, temLogo2: !!logo2Buffer, temEstampa: !!estampaBuffer,
     });
 
-    // Preparar template: converter para 2:3 (1024x1536) adicionando faixas brancas
-    // O template é 9:16 (900x1600). A API gpt-image-1 usa 1024x1536 (2:3).
-    // Adicionar padding lateral para encaixar sem cortar o conteúdo.
+    // Preparar template:
+    // 1. Adicionar margem de segurança de 40px em todos os lados (fundo creme)
+    // 2. Converter para 2:3 (1024x1536) para compatibilidade com a API
+    const MARGIN = 40; // px de margem de segurança em todos os lados
     const rawTemplate = fs.readFileSync(templatePath);
     const templateMeta = await sharp(rawTemplate).metadata();
     const tW = templateMeta.width ?? 900;
     const tH = templateMeta.height ?? 1600;
-    // Calcular dimensões do canvas 2:3 que contenha o template inteiro
+
+    // Etapa 1: template com margem de segurança (cor creme do fundo)
+    const templateWithMargin = await sharp({
+      create: {
+        width: tW + MARGIN * 2,
+        height: tH + MARGIN * 2,
+        channels: 3,
+        background: { r: 245, g: 240, b: 230 }, // creme, igual ao fundo do template
+      }
+    })
+      .composite([{ input: rawTemplate, left: MARGIN, top: MARGIN }])
+      .png()
+      .toBuffer();
+
+    // Etapa 2: embutir em canvas branco 1024x1536 (2:3) para a API
+    const mW = tW + MARGIN * 2;
+    const mH = tH + MARGIN * 2;
     const canvasH = 1536;
-    const canvasW = Math.round(canvasH * (tW / tH)); // mantém proporção do template
-    // Embutir o template redimensionado em canvas branco 1024x1536
+    const canvasW = Math.round(canvasH * (mW / mH));
     const templatePadded = await sharp({
       create: { width: 1024, height: 1536, channels: 3, background: { r: 255, g: 255, b: 255 } }
     })
       .composite([{
-        input: await sharp(rawTemplate)
+        input: await sharp(templateWithMargin)
           .resize(canvasW, canvasH, { fit: "contain", kernel: sharp.kernel.lanczos3 })
           .toBuffer(),
         gravity: "center",
@@ -258,16 +274,37 @@ export async function POST(request: Request) {
 
     if (!imageBuffer2) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
 
-    // A saída da API é 1024x1536 (2:3) com o template embutido em 9:16 + faixas brancas laterais.
-    // Recortar para a área do template (9:16) e redimensionar para 900x1600.
+    // Saída da API: 1024x1536 (2:3) contendo o template+margem em 9:16 com faixas laterais brancas.
+    // 1. Recortar a faixa lateral (converter de 2:3 → proporção do template+margem)
+    // 2. Recortar a margem de segurança (40px em todos os lados escalada)
+    // 3. Redimensionar para 900x1600
     const outMeta = await sharp(imageBuffer2).metadata();
     const outW = outMeta.width ?? 1024;
     const outH = outMeta.height ?? 1536;
-    // Largura real do template dentro do canvas (mantendo 9:16 dentro do 2:3)
-    const innerW = Math.round(outH * (9 / 16)); // largura 9:16
+
+    // Proporção do template+margem
+    const tmRatio = (tW + MARGIN * 2) / (tH + MARGIN * 2);
+    const innerW = Math.round(outH * tmRatio);
     const leftPad = Math.round((outW - innerW) / 2);
-    const upscaled = await sharp(imageBuffer2)
+
+    // Recortar faixas laterais → agora temos só a área do template+margem
+    const cropped = await sharp(imageBuffer2)
       .extract({ left: Math.max(0, leftPad), top: 0, width: Math.min(innerW, outW), height: outH })
+      .toBuffer();
+
+    // Recortar a margem de segurança (escalonada proporcionalmente)
+    const croppedMeta = await sharp(cropped).metadata();
+    const cW = croppedMeta.width ?? innerW;
+    const cH = croppedMeta.height ?? outH;
+    const scaleX = cW / (tW + MARGIN * 2);
+    const scaleY = cH / (tH + MARGIN * 2);
+    const marginLeft = Math.round(MARGIN * scaleX);
+    const marginTop = Math.round(MARGIN * scaleY);
+    const innerCropW = Math.min(cW - marginLeft * 2, cW);
+    const innerCropH = Math.min(cH - marginTop * 2, cH);
+
+    const upscaled = await sharp(cropped)
+      .extract({ left: marginLeft, top: marginTop, width: innerCropW, height: innerCropH })
       .resize(900, 1600, { fit: "fill", kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 6, quality: 100 })
       .toBuffer();
