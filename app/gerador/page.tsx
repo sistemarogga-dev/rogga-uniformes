@@ -38,7 +38,6 @@ interface Mensagem {
   inicio?: number; // quando o pedido começou (cronômetro)
 }
 
-const VENDEDORES = ["Ketelly", "Manassés", "Raphael", "Jonathas"];
 
 const SUGESTOES = [
   "Crie uma arte com o logo em anexo, cores automáticas pelo ramo da empresa",
@@ -88,7 +87,6 @@ const lerPreview = (f: File) =>
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
-  const [vendedor, setVendedor] = useState("");
   const [usarMascara, setUsarMascara] = useState(true);
   const [qualidade, setQualidade] = useState<"rapida" | "maxima">("rapida");
 
@@ -232,14 +230,11 @@ export default function GeradorPage() {
     /* eslint-disable react-hooks/set-state-in-effect */
     const r = localStorage.getItem("rogga-regras-v2");
     if (r) setRegras(r);
-    const v = localStorage.getItem("rogga-vendedor");
-    if (v) setVendedor(v);
     if (localStorage.getItem("rogga-mascara") === "false") setUsarMascara(false);
     if (localStorage.getItem("rogga-qualidade") === "maxima") setQualidade("maxima");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => { localStorage.setItem("rogga-regras-v2", regras); }, [regras]);
-  useEffect(() => { if (vendedor) localStorage.setItem("rogga-vendedor", vendedor); }, [vendedor]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
   useEffect(() => { localStorage.setItem("rogga-qualidade", qualidade); }, [qualidade]);
 
@@ -389,7 +384,6 @@ export default function GeradorPage() {
       fd.append("prompt", chat.prompt || conteudo);
       fd.append("usarMascara", String(usarMascara));
       fd.append("qualidade", qualidade);
-      fd.append("vendedor", (editando ? editando.vendedor : "") || vendedor);
       anexosEnviados.forEach((img) => fd.append("imagens", img.file));
       if (editando) {
         // Arte do histórico vai pelo caminho (leve); arte só local vai como imagem
@@ -429,7 +423,7 @@ export default function GeradorPage() {
 
       const nova: ArteGerada = {
         url: final.url, prompt: final.prompt || "", logomarca: final.logomarca || "Logomarca",
-        vendedor: (editando ? editando.vendedor : "") || vendedor,
+        vendedor: "",
         timestamp: final.timestamp || Date.now(),
         caminho: final.arte?.caminho, tempoMs: Date.now() - inicio,
       };
@@ -451,7 +445,7 @@ export default function GeradorPage() {
       setGerandoImagem(false);
       abortRef.current = null;
     }
-  }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, qualidade, vendedor]);
+  }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, qualidade]);
 
   const parar = () => abortRef.current?.abort();
 
@@ -468,8 +462,7 @@ export default function GeradorPage() {
   const montarNomeArquivo = (arte: ArteGerada) => {
     const limpa = (s: string) => s.replace(/[\\/:*?"<>|]/g, "").trim();
     const logo = limpa(arte.logomarca) || "Logomarca";
-    const vend = limpa(arte.vendedor || vendedor) || "Vendedor";
-    return `${logo} - Proposta de Uniformes - ${vend}.webp`;
+    return `${logo} - Proposta de Uniformes.webp`;
   };
 
   const baixarImagem = async (arte: ArteGerada) => {
@@ -548,7 +541,7 @@ export default function GeradorPage() {
     const dia = chaveDia(a.timestamp);
     if (dataDe && dia < dataDe) return false;
     if (dataAte && dia > dataAte) return false;
-    if (termo && !`${a.logomarca} ${a.vendedor} ${a.prompt}`.toLowerCase().includes(termo)) return false;
+    if (termo && !`${a.logomarca} ${a.prompt}`.toLowerCase().includes(termo)) return false;
     return true;
   });
   const pastas: Array<{ chave: string; artes: ArteGerada[] }> = [];
@@ -698,7 +691,7 @@ export default function GeradorPage() {
             <div className="flex gap-1.5">
               <div className="flex-1 flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-white/25 px-2.5">
                 <Search size={14} className="text-gray-500 shrink-0" />
-                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar marca, vendedor..."
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar marca..."
                   className="w-full bg-transparent py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none" />
                 {busca && (
                   <button onClick={() => setBusca("")} aria-label="Limpar pesquisa" className="text-gray-500 hover:text-white"><X size={12} /></button>
@@ -761,7 +754,7 @@ export default function GeradorPage() {
                     className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
                   <div className="px-2 py-1.5">
                     <p className="text-[11px] font-semibold text-gray-200 truncate" title={arte.logomarca}>{arte.logomarca}</p>
-                    <p className="text-[10px] text-gray-500">{hora(arte.timestamp)}{arte.vendedor ? ` · ${arte.vendedor}` : ""}</p>
+                    <p className="text-[10px] text-gray-500">{hora(arte.timestamp)}</p>
                   </div>
                   {/* Ações: aparecem no hover (desktop) e sempre no toque */}
                   <div className="absolute top-1 right-1 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
@@ -810,7 +803,7 @@ export default function GeradorPage() {
         <main className="flex-1 flex flex-col items-center justify-center px-4 pb-16">
           <div className="w-full max-w-3xl">
             <h1 className="text-center text-2xl sm:text-3xl font-semibold text-white mb-8">
-              O que vamos criar hoje{vendedor ? `, ${vendedor}` : ""}?
+              O que vamos criar hoje?
             </h1>
             {composer}
             <div className="flex flex-wrap justify-center gap-2 mt-4">
@@ -969,18 +962,6 @@ export default function GeradorPage() {
               <button onClick={() => setConfigAberta(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10">
                 <X size={18} />
               </button>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Vendedor(a) <span className="font-normal text-gray-500">— usado no nome do arquivo</span></label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {VENDEDORES.map((v) => (
-                  <button key={v} onClick={() => setVendedor(v)}
-                    className={`py-2 px-3 rounded-xl border text-sm font-semibold transition-colors ${vendedor === v ? "border-[#2563EB] bg-[#2563EB]/10 text-[#60A5FA]" : "border-white/10 text-gray-400 hover:border-white/25"}`}>
-                    {v}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div>
