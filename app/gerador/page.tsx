@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronRight, Folder, FolderOpen,
+  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen,
 } from "lucide-react";
 import { type ArteGerada, listarArtes, salvarArte, excluirArte } from "./historico";
 
@@ -87,9 +87,38 @@ export default function GeradorPage() {
   const [aviso, setAviso] = useState("");
 
   const [arteModal, setArteModal] = useState<ArteGerada | null>(null);
+  const [zoom, setZoom] = useState(1);
+  // Lista percorrida pelas setas na tela cheia (a pasta da galeria ou as artes do chat)
+  const [listaModal, setListaModal] = useState<ArteGerada[]>([]);
+  const toqueX = useRef<number | null>(null);
+  const indiceModal = arteModal ? listaModal.findIndex((a) => a.timestamp === arteModal.timestamp) : -1;
+  const abrirModal = (arte: ArteGerada, lista: ArteGerada[]) => {
+    setArteModal(arte);
+    setListaModal(lista);
+    setZoom(1);
+  };
+  // Calcula a partir da arte atual (updater), para teclas rápidas não "pularem" passos
+  const navegarModal = useCallback((passo: number) => {
+    setArteModal((atual) => {
+      const i = atual ? listaModal.findIndex((a) => a.timestamp === atual.timestamp) : -1;
+      const j = i + passo;
+      return i < 0 || j < 0 || j >= listaModal.length ? atual : listaModal[j];
+    });
+    setZoom(1);
+  }, [listaModal]);
+  // Teclado na tela cheia: ← → trocam de arte, Esc fecha
+  useEffect(() => {
+    if (!arteModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); navegarModal(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); navegarModal(1); }
+      else if (e.key === "Escape") setArteModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [arteModal, navegarModal]);
   // Artes já baixadas nesta sessão (o botão "Baixar" fica azul depois do clique)
   const [baixadas, setBaixadas] = useState<Set<number>>(new Set());
-  const [zoom, setZoom] = useState(1);
   const [configAberta, setConfigAberta] = useState(false);
   const [arrastando, setArrastando] = useState(false);
 
@@ -575,7 +604,7 @@ export default function GeradorPage() {
                   className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#2563EB]/70" : "border-white/10 hover:border-white/25"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={arte.url} alt={arte.logomarca} loading="lazy"
-                    onClick={() => { setArteModal(arte); setZoom(1); }}
+                    onClick={() => abrirModal(arte, pasta.artes)}
                     className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
                   <div className="px-2 py-1.5">
                     <p className="text-[11px] font-semibold text-gray-200 truncate" title={arte.logomarca}>{arte.logomarca}</p>
@@ -583,7 +612,6 @@ export default function GeradorPage() {
                   </div>
                   {/* Ações: aparecem no hover (desktop) e sempre no toque */}
                   <div className="absolute top-1 right-1 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                    {/* eslint-disable-next-line react-hooks/refs -- só roda no clique */}
                     <button onClick={() => editarEsta(arte)} title="Editar esta arte"
                       className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Wand2 size={12} /></button>
                     <button onClick={() => baixarImagem(arte)} title="Baixar"
@@ -691,7 +719,7 @@ export default function GeradorPage() {
                       {m.arte && (
                         <div className="space-y-2">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={m.arte.url} alt="Arte gerada" onClick={() => { setArteModal(m.arte!); setZoom(1); }}
+                          <img src={m.arte.url} alt="Arte gerada" onClick={() => abrirModal(m.arte!, mensagens.flatMap((x) => (x.arte ? [x.arte] : [])))}
                             className={`w-full max-w-[300px] rounded-2xl border cursor-zoom-in ${baseArte?.timestamp === m.arte.timestamp ? "border-[#2563EB]/60" : "border-white/10"}`} />
                           <div className="flex flex-wrap items-center gap-1">
                             {/* Cinza por padrão; ficam azuis só depois do clique */}
@@ -804,10 +832,24 @@ export default function GeradorPage() {
         </div>
       )}
 
-      {/* ===== TELA CHEIA ===== */}
+      {/* ===== TELA CHEIA (com navegação entre as artes) ===== */}
       {arteModal && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+          onTouchStart={(e) => { toqueX.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+            if (toqueX.current === null || zoom !== 1) return;
+            const dx = e.changedTouches[0].clientX - toqueX.current;
+            if (Math.abs(dx) > 50) navegarModal(dx < 0 ? 1 : -1);
+            toqueX.current = null;
+          }}>
           <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-white/10">
+            <div className="flex-1 min-w-0 text-white">
+              <p className="text-sm font-semibold truncate">{arteModal.logomarca}</p>
+              <p className="text-[11px] text-gray-400">
+                {nomePasta(chaveDia(arteModal.timestamp))} · {hora(arteModal.timestamp)}
+                {listaModal.length > 1 && ` · ${indiceModal + 1} de ${listaModal.length}`}
+              </p>
+            </div>
             <button onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.25).toFixed(2)))}
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomOut size={18} /></button>
             <span className="text-white text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -824,11 +866,25 @@ export default function GeradorPage() {
             <button onClick={() => setArteModal(null)}
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
           </div>
-          <div className="flex-1 overflow-auto flex items-start justify-center p-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={arteModal.url} alt="Arte gerada"
-              style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform 0.2s" }}
-              className="max-w-sm w-full" />
+          <div className="relative flex-1 min-h-0">
+            <div className="h-full overflow-auto flex items-start justify-center p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={arteModal.url} alt="Arte gerada"
+                style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform 0.2s" }}
+                className="max-w-sm w-full" />
+            </div>
+            {listaModal.length > 1 && (
+              <>
+                <button onClick={() => navegarModal(-1)} disabled={indiceModal <= 0} title="Anterior (←)" aria-label="Arte anterior"
+                  className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20 disabled:hover:bg-white/10 transition-colors">
+                  <ChevronLeft size={26} />
+                </button>
+                <button onClick={() => navegarModal(1)} disabled={indiceModal >= listaModal.length - 1} title="Próxima (→)" aria-label="Próxima arte"
+                  className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20 disabled:hover:bg-white/10 transition-colors">
+                  <ChevronRight size={26} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
