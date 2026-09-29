@@ -342,11 +342,15 @@ export default function GeradorPage() {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.95));
       if (!blob) throw new Error("webp");
       const blobUrl = URL.createObjectURL(blob);
+      // Download direto (vai para a pasta padrão do navegador, normalmente Downloads).
+      // O link entra na página e só é descartado depois, para o download não ser cancelado.
       const a = document.createElement("a");
       a.download = montarNomeArquivo(arte);
       a.href = blobUrl;
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(blobUrl);
+      setTimeout(() => { a.remove(); URL.revokeObjectURL(blobUrl); }, 1000);
       setBaixadas((prev) => new Set(prev).add(arte.timestamp));
     } catch { setAviso("Erro ao baixar. Abra a arte e use clique direito > Salvar imagem."); }
   };
