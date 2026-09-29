@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { exigirAcesso } from "@/lib/acesso";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,8 @@ const ferramentas: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 ];
 
 export async function POST(request: Request) {
+  const bloqueio = await exigirAcesso();
+  if (bloqueio) return bloqueio;
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {

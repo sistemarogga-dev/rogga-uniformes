@@ -4,9 +4,22 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen,
+  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock,
 } from "lucide-react";
-import { type ArteGerada, listarArtes, salvarArte, excluirArte } from "./historico";
+import { type ArteGerada, listarArtes as listarArtesLocais, excluirArte as excluirArteLocal } from "./historico";
+
+// Ajustes de um clique embaixo de cada arte (editam a arte direto, sem passar pelo chat)
+const AJUSTES_RAPIDOS = [
+  { rotulo: "Trocar cores", prompt: "Troque as cores dos produtos por outra combinação que combine com a logomarca e o ramo do cliente, mantendo a polo e a camiseta com cores diferentes entre si. Mantenha todo o resto igual." },
+  { rotulo: "Trocar fundos", prompt: "Troque as imagens de contexto (fundos) de todos os quadros por outro cenário fotográfico do mesmo ramo do cliente. Mantenha os produtos, cores e logos exatamente iguais." },
+  { rotulo: "Logo maior", prompt: "Aumente um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada e legível. Não mexa na logo do peito. Mantenha todo o resto igual." },
+  { rotulo: "Logo menor", prompt: "Diminua um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada. Não mexa na logo do peito. Mantenha todo o resto igual." },
+];
+
+const segundos = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s`;
+};
 
 interface ImagemEnviada {
   id: string;
@@ -21,6 +34,8 @@ interface Mensagem {
   anexos?: string[];
   arte?: ArteGerada;
   status?: "pensando" | "gerando" | "erro";
+  previa?: string; // prévia da arte enquanto é gerada
+  inicio?: number; // quando o pedido começou (cronômetro)
 }
 
 const VENDEDORES = ["Ketelly", "Manassés", "Raphael", "Jonathas"];
@@ -134,8 +149,68 @@ export default function GeradorPage() {
   // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
   const [agora, setAgora] = useState(() => Date.now());
 
+  // ─── Senha da equipe ────────────────────────────────────────────────────────
+  const [acesso, setAcesso] = useState<"verificando" | "ok" | "bloqueado">("verificando");
+  const [senha, setSenha] = useState("");
+  const [erroSenha, setErroSenha] = useState("");
+  const [entrando, setEntrando] = useState(false);
+
+  // ─── Histórico compartilhado (nuvem) ────────────────────────────────────────
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const r = await fetch("/api/artes");
+      if (r.status === 401) { setAcesso("bloqueado"); return; }
+      const d = await r.json();
+      const daNuvem: ArteGerada[] = (d.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string }) =>
+        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho }));
+      setArtes(daNuvem);
+      setAgora(Date.now());
+
+      // Migração única: artes que estavam só neste navegador sobem para a nuvem
+      const locais = await listarArtesLocais();
+      if (!locais.length) return;
+      const jaNaNuvem = new Set(daNuvem.map((a) => a.timestamp));
+      for (const a of locais) {
+        if (!jaNaNuvem.has(a.timestamp)) {
+          const fd = new FormData();
+          fd.append("imagem", await (await fetch(a.url)).blob(), "arte.jpg");
+          fd.append("logomarca", a.logomarca);
+          fd.append("vendedor", a.vendedor);
+          fd.append("timestamp", String(a.timestamp));
+          const up = await fetch("/api/artes", { method: "POST", body: fd });
+          if (!up.ok) continue; // tenta de novo na próxima vez
+        }
+        await excluirArteLocal(a.timestamp);
+      }
+      const d2 = await (await fetch("/api/artes")).json();
+      setArtes((d2.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string }) =>
+        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho })));
+    } catch {
+      // sem histórico agora; o gerador continua funcionando
+    }
+  }, []);
+
   useEffect(() => {
-    listarArtes().then((a) => { setArtes(a); setAgora(Date.now()); });
+    fetch("/api/acesso").then((r) => r.json()).then((d) => {
+      setAcesso(d.ok ? "ok" : "bloqueado");
+      if (d.ok) carregarHistorico();
+    }).catch(() => setAcesso("ok"));
+  }, [carregarHistorico]);
+
+  const entrar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEntrando(true); setErroSenha("");
+    try {
+      const r = await fetch("/api/acesso", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ senha }) });
+      const d = await r.json();
+      if (!d.ok) { setErroSenha(d.error || "Senha incorreta."); return; }
+      setSenha(""); setAcesso("ok");
+      carregarHistorico();
+    } catch { setErroSenha("Sem conexão. Tente de novo."); }
+    finally { setEntrando(false); }
+  };
+
+  useEffect(() => {
     // Desktop abre a lateral por padrão; celular começa fechada
     let salvo: string | null = null;
     try { salvo = localStorage.getItem("rogga-lateral"); } catch {}
@@ -181,6 +256,14 @@ export default function GeradorPage() {
     const timers = etapas.map(({ p, t }) => setTimeout(() => setProgresso(p), t));
     return () => timers.forEach(clearTimeout);
   }, [gerandoImagem]);
+
+  // Cronômetro: "tique" a cada segundo enquanto há um pedido em andamento
+  const [tique, setTique] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ocupado) return;
+    const t = setInterval(() => setTique(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [ocupado]);
 
   // Rola para a última mensagem
   useEffect(() => {
@@ -245,21 +328,22 @@ export default function GeradorPage() {
   const atualizarMsg = (id: string, dados: Partial<Mensagem>) =>
     setMensagens((prev) => prev.map((m) => (m.id === id ? { ...m, ...dados } : m)));
 
-  const enviar = useCallback(async (textoForcado?: string) => {
+  // ajuste: edição de um clique numa arte (pula o chat e edita direto essa arte)
+  const enviar = useCallback(async (textoForcado?: string, ajuste?: { arte: ArteGerada; rotulo: string }) => {
     const conteudo = (textoForcado ?? texto).trim();
     if ((!conteudo && imagens.length === 0) || ocupado) return;
 
-    const anexosEnviados = imagens;
+    const anexosEnviados = ajuste ? [] : imagens;
+    const inicio = Date.now();
     const userMsg: Mensagem = {
       id: novoId(), papel: "user",
-      texto: conteudo || "Crie uma arte com as imagens em anexo.",
+      texto: ajuste ? `${ajuste.rotulo} (${ajuste.arte.logomarca})` : conteudo || "Crie uma arte com as imagens em anexo.",
       anexos: anexosEnviados.map((i) => i.preview),
     };
     const respId = novoId();
     const historico = [...mensagens, userMsg];
-    setMensagens([...historico, { id: respId, papel: "assistant", texto: "", status: "pensando" }]);
-    setTexto("");
-    setImagens([]);
+    setMensagens([...historico, { id: respId, papel: "assistant", texto: "", status: "pensando", inicio }]);
+    if (!ajuste) { setTexto(""); setImagens([]); }
     setAviso("");
     setOcupado(true);
 
@@ -267,59 +351,95 @@ export default function GeradorPage() {
     abortRef.current = controller;
 
     try {
-      // 1) Conversa: o assistente responde ou decide gerar/editar
-      const resChat = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          mensagens: historico.map((m) => ({
-            papel: m.papel,
-            texto: m.arte ? `${m.texto}\n[arte gerada e exibida ao usuário]` : m.texto,
-          })),
-          temArte: !!baseArte,
-          anexos: anexosEnviados.length,
-        }),
-      });
-      const chat = await resChat.json();
-      if (chat.error) throw new Error(chat.error);
+      // 1) Conversa: o assistente responde ou decide gerar/editar (ajuste rápido pula)
+      let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean };
+      if (ajuste) {
+        chat = { tipo: "arte", modo: "editar", prompt: conteudo, texto: `Aplicando "${ajuste.rotulo}"...` };
+      } else {
+        const resChat = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            mensagens: historico.map((m) => ({
+              papel: m.papel,
+              texto: m.arte ? `${m.texto}\n[arte gerada e exibida ao usuário]` : m.texto,
+            })),
+            temArte: !!baseArte,
+            anexos: anexosEnviados.length,
+          }),
+        });
+        chat = await resChat.json();
+        if (chat.semAcesso) setAcesso("bloqueado");
+        if (chat.error) throw new Error(chat.error);
+      }
 
       if (chat.tipo === "texto") {
-        atualizarMsg(respId, { texto: chat.texto, status: undefined });
+        atualizarMsg(respId, { texto: chat.texto || "", status: undefined });
         return;
       }
 
       // 2) Geração da arte
-      const editando = chat.modo === "editar" ? baseArte : null;
-      atualizarMsg(respId, { texto: chat.texto, status: "gerando" });
+      const editando = ajuste ? ajuste.arte : chat.modo === "editar" ? baseArte : null;
+      atualizarMsg(respId, { texto: chat.texto || "", status: "gerando" });
       setGerandoImagem(true);
 
       const fd = new FormData();
       fd.append("regras", regras);
-      fd.append("prompt", chat.prompt);
+      fd.append("prompt", chat.prompt || conteudo);
       fd.append("usarMascara", String(usarMascara));
       fd.append("qualidade", qualidade);
+      fd.append("vendedor", (editando ? editando.vendedor : "") || vendedor);
       anexosEnviados.forEach((img) => fd.append("imagens", img.file));
-      if (editando) fd.append("baseImage", editando.url);
+      if (editando) {
+        // Arte do histórico vai pelo caminho (leve); arte só local vai como imagem
+        if (editando.caminho) fd.append("basePath", editando.caminho);
+        else fd.append("baseImage", editando.url);
+        fd.append("logomarcaBase", editando.logomarca);
+      }
 
       const res = await fetch("/api/gerar", { method: "POST", body: fd, signal: controller.signal });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (!res.ok || !res.body) {
+        const d = await res.json().catch(() => ({}));
+        if (d.semAcesso) setAcesso("bloqueado");
+        throw new Error(d.error || "Erro ao gerar arte.");
+      }
 
-      // Na edição sem novo logo, mantém o nome da marca da arte original
-      const nomeMarca = anexosEnviados.length > 0
-        ? (data.logomarca || "Logomarca")
-        : (editando ? editando.logomarca : data.logomarca) || "Logomarca";
+      // Resposta em partes (uma linha JSON por evento): prévias e depois a arte final
+      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number; arte?: { caminho: string; url: string } | null };
+      let final: Evento | null = null;
+      const leitor = res.body.getReader();
+      const dec = new TextDecoder();
+      let resto = "";
+      for (;;) {
+        const { value, done } = await leitor.read();
+        if (done) break;
+        resto += dec.decode(value, { stream: true });
+        const linhas = resto.split("\n");
+        resto = linhas.pop() || "";
+        for (const linha of linhas) {
+          if (!linha.trim()) continue;
+          const ev = JSON.parse(linha) as Evento;
+          if (ev.tipo === "parcial" && ev.url) atualizarMsg(respId, { previa: ev.url });
+          else if (ev.tipo === "erro") throw new Error(ev.error || "Erro ao gerar arte.");
+          else if (ev.tipo === "final") final = ev;
+        }
+      }
+      if (!final?.url) throw new Error("A geração foi interrompida. Tente de novo.");
+
       const nova: ArteGerada = {
-        url: data.url, prompt: data.prompt, logomarca: nomeMarca,
-        vendedor: (editando ? editando.vendedor : "") || vendedor, timestamp: Date.now(),
+        url: final.url, prompt: final.prompt || "", logomarca: final.logomarca || "Logomarca",
+        vendedor: (editando ? editando.vendedor : "") || vendedor,
+        timestamp: final.timestamp || Date.now(),
+        caminho: final.arte?.caminho, tempoMs: Date.now() - inicio,
       };
-      atualizarMsg(respId, { arte: nova, status: undefined });
+      atualizarMsg(respId, { arte: nova, status: undefined, previa: undefined });
       // A arte nova NÃO entra em edição sozinha: só quando o designer clicar em "Editar"
       setBaseArte(null);
-      setArtes((prev) => [nova, ...prev]);
+      // No histórico usa o endereço da nuvem (mais leve que manter a imagem na memória)
+      setArtes((prev) => [{ ...nova, url: final?.arte?.url || nova.url }, ...prev]);
       setAgora(Date.now());
-      salvarArte(nova);
+      if (!final.arte) setAviso("A arte foi gerada, mas não entrou no histórico compartilhado. Baixe-a para não perder.");
     } catch (e: unknown) {
       const cancelado = e instanceof DOMException && e.name === "AbortError";
       atualizarMsg(respId, {
@@ -391,9 +511,13 @@ export default function GeradorPage() {
   };
 
   const excluirDoHistorico = (arte: ArteGerada) => {
-    if (!window.confirm(`Excluir a arte "${arte.logomarca}" do histórico?`)) return;
+    if (!window.confirm(`Excluir a arte "${arte.logomarca}" do histórico da equipe? Ela some para todos.`)) return;
     setArtes((prev) => prev.filter((a) => a.timestamp !== arte.timestamp));
-    excluirArte(arte.timestamp);
+    if (arte.caminho) {
+      fetch(`/api/artes?p=${encodeURIComponent(arte.caminho)}`, { method: "DELETE" }).then((r) => {
+        if (!r.ok) { setAviso("Não foi possível excluir a arte. Tente de novo."); carregarHistorico(); }
+      });
+    }
   };
 
   const hora = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -516,6 +640,35 @@ export default function GeradorPage() {
         onChange={(e) => { if (e.target.files?.length) adicionarImagens(e.target.files); e.target.value = ""; }} />
     </div>
   );
+
+  // ─── Tela de senha da equipe ────────────────────────────────────────────────
+  if (acesso !== "ok") {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-[#131317] px-4 text-gray-100">
+        {acesso === "verificando" ? (
+          <Loader2 size={22} className="animate-spin text-gray-500" />
+        ) : (
+          <form onSubmit={entrar} className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#1e1e24] p-6 space-y-4">
+            <div className="text-center space-y-1">
+              <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-[#2563EB]/15 flex items-center justify-center">
+                <Lock size={20} className="text-[#60A5FA]" />
+              </div>
+              <p className="font-bold tracking-wide text-white">ROGGA <span className="text-[#60A5FA] font-semibold text-sm">Gerador de Artes</span></p>
+              <p className="text-xs text-gray-500">Digite a senha da equipe. Este navegador vai lembrar dela.</p>
+            </div>
+            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus
+              placeholder="Senha da equipe" autoComplete="current-password"
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#2563EB]" />
+            {erroSenha && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertCircle size={13} /> {erroSenha}</p>}
+            <button type="submit" disabled={!senha || entrando}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2563EB] py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {entrando && <Loader2 size={15} className="animate-spin" />} Entrar
+            </button>
+          </form>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -699,6 +852,7 @@ export default function GeradorPage() {
                       {m.status === "pensando" && (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
                           <Loader2 size={15} className="animate-spin" /> Pensando...
+                          {m.inicio && <span className="text-xs text-gray-600 tabular-nums">{segundos(tique - m.inicio)}</span>}
                         </div>
                       )}
                       {m.texto && (
@@ -708,11 +862,28 @@ export default function GeradorPage() {
                         </p>
                       )}
                       {m.status === "gerando" && (
-                        <div className="w-full max-w-[300px] aspect-[9/16] rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col items-center justify-center gap-4 p-6">
-                          <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
-                          <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">pode levar até 1 minuto</span></p>
-                          <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
-                            <div className="h-1.5 rounded-full bg-[#2563EB] transition-all duration-1000 ease-out" style={{ width: `${progresso}%` }} />
+                        <div className="relative w-full max-w-[300px] aspect-[9/16] rounded-2xl overflow-hidden bg-white/[0.04] border border-white/10">
+                          {m.previa ? (
+                            /* Prévia da arte se formando */
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={m.previa} alt="Prévia da arte" className="absolute inset-0 w-full h-full object-cover" />
+                          ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+                              <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
+                              <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">a prévia aparece em instantes</span></p>
+                            </div>
+                          )}
+                          {/* Cronômetro + progresso */}
+                          <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+                            <div className="flex items-center justify-between text-xs text-white mb-1.5">
+                              <span className="flex items-center gap-1.5">
+                                <Loader2 size={12} className="animate-spin" /> {m.previa ? "Finalizando..." : "Gerando..."}
+                              </span>
+                              {m.inicio && <span className="tabular-nums font-semibold">{segundos(tique - m.inicio)}</span>}
+                            </div>
+                            <div className="w-full bg-white/15 rounded-full h-1 overflow-hidden">
+                              <div className="h-1 rounded-full bg-[#2563EB] transition-all duration-1000 ease-out" style={{ width: `${progresso}%` }} />
+                            </div>
                           </div>
                         </div>
                       )}
@@ -738,6 +909,23 @@ export default function GeradorPage() {
                                 <Wand2 size={14} /> Editar
                               </button>
                             )}
+                            {m.arte.tempoMs !== undefined && (
+                              <span className="flex items-center gap-1 text-[11px] text-gray-500 px-2" title="Tempo de geração">
+                                <Timer size={12} /> {segundos(m.arte.tempoMs)}
+                              </span>
+                            )}
+                          </div>
+                          {/* Ajustes rápidos: editam esta arte com um clique */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {AJUSTES_RAPIDOS.map((a) => (
+                              <button key={a.rotulo} disabled={ocupado}
+                                onClick={() => enviar(a.prompt, { arte: m.arte!, rotulo: a.rotulo })}
+                                className="text-[11px] text-gray-400 border border-white/10 rounded-full px-2.5 py-1 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:border-white/10 transition-colors">
+                                {a.rotulo}
+                              </button>
+                            ))}
+                          </div>
+                          <div>
                             <details className="text-xs text-gray-500 w-full">
                               <summary className="cursor-pointer hover:text-gray-300 px-2.5 py-1 w-fit">Ver prompt enviado</summary>
                               <p className="mt-1 bg-white/5 rounded-lg p-3 leading-relaxed whitespace-pre-wrap">{m.arte.prompt}</p>

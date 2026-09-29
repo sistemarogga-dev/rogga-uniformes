@@ -1,6 +1,6 @@
-// Histórico das artes geradas, salvo no navegador (IndexedDB).
-// IndexedDB e não localStorage: cada arte tem ~450 KB e o localStorage lota com poucas.
-// Sem login, o histórico é por navegador/computador.
+// Histórico ANTIGO, que ficava só no navegador (IndexedDB). Hoje o histórico é
+// compartilhado na nuvem (/api/artes); isto fica só para migrar as artes antigas
+// de cada navegador para a nuvem uma única vez.
 
 export interface ArteGerada {
   url: string;
@@ -8,6 +8,8 @@ export interface ArteGerada {
   logomarca: string;
   vendedor: string;
   timestamp: number;
+  caminho?: string; // arte salva no histórico compartilhado (pathname no Blob)
+  tempoMs?: number; // quanto tempo a geração levou
 }
 
 const DB = "rogga-gerador";
