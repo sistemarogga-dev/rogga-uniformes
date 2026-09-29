@@ -4,9 +4,13 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock,
+  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen,
 } from "lucide-react";
-import { type ArteGerada, listarArtes as listarArtesLocais, excluirArte as excluirArteLocal } from "./historico";
+import {
+  type ArteGerada, type Mensagem, type Conversa,
+  listarArtes as listarArtesLocais, excluirArte as excluirArteLocal,
+  listarConversas, salvarConversa, excluirConversa,
+} from "./historico";
 
 // Ajustes de um clique embaixo de cada arte (editam a arte direto, sem passar pelo chat)
 const AJUSTES_RAPIDOS = [
@@ -25,17 +29,6 @@ interface ImagemEnviada {
   id: string;
   file: File;
   preview: string;
-}
-
-interface Mensagem {
-  id: string;
-  papel: "user" | "assistant";
-  texto: string;
-  anexos?: string[];
-  arte?: ArteGerada;
-  status?: "pensando" | "gerando" | "erro";
-  previa?: string; // prévia da arte enquanto é gerada
-  inicio?: number; // quando o pedido começou (cronômetro)
 }
 
 
@@ -146,6 +139,61 @@ export default function GeradorPage() {
   const [pastasAlternadas, setPastasAlternadas] = useState<Set<string>>(new Set());
   // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
   const [agora, setAgora] = useState(() => Date.now());
+
+  // ─── Conversas (lateral, aba "Conversas") — salvas neste navegador ─────────────
+  const [abaLateral, setAbaLateral] = useState<"conversas" | "artes">("conversas");
+  const [conversas, setConversas] = useState<Conversa[]>([]);
+  const [conversaId, setConversaId] = useState<string | null>(null);
+  const conversaIdRef = useRef<string | null>(null); // id síncrono (usado dentro do enviar)
+  const salvoRef = useRef(""); // assinatura do que já foi salvo (evita salvar à toa)
+
+  useEffect(() => {
+    listarConversas().then(setConversas);
+    try {
+      const aba = localStorage.getItem("rogga-aba-lateral");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (aba === "artes" || aba === "conversas") setAbaLateral(aba);
+    } catch {}
+  }, []);
+  const trocarAba = (aba: "conversas" | "artes") => {
+    setAbaLateral(aba);
+    try { localStorage.setItem("rogga-aba-lateral", aba); } catch {}
+  };
+
+  // Só o que já terminou vai para o histórico (nada de "Pensando..." nem prévia).
+  // As artes salvas na nuvem ficam pelo endereço (conversa leve).
+  const mensagensEstaveis = (msgs: Mensagem[]) =>
+    msgs
+      .filter((m) => !m.status || m.status === "erro")
+      .map((m) => ({
+        ...m,
+        previa: undefined,
+        inicio: undefined,
+        arte: m.arte?.caminho ? { ...m.arte, url: `/api/artes/imagem?p=${encodeURIComponent(m.arte.caminho)}` } : m.arte,
+      }));
+  const assinaturaDe = (id: string, msgs: Mensagem[]) =>
+    id + ":" + msgs.map((m) => `${m.id}.${m.arte?.timestamp ?? ""}.${m.status ?? ""}.${m.texto.length}`).join("|");
+
+  // Salva a conversa aberta sempre que ela muda
+  useEffect(() => {
+    if (!conversaId) return;
+    const estaveis = mensagensEstaveis(mensagens);
+    if (!estaveis.length) return;
+    const assinatura = assinaturaDe(conversaId, estaveis);
+    if (assinatura === salvoRef.current) return;
+    salvoRef.current = assinatura;
+    const antiga = conversas.find((c) => c.id === conversaId);
+    const titulo = estaveis.find((m) => m.papel === "user")?.texto.replace(/\s+/g, " ").slice(0, 60) || "Nova conversa";
+    const c: Conversa = {
+      id: conversaId,
+      titulo: antiga?.titulo || titulo,
+      criadaEm: antiga?.criadaEm ?? Date.now(),
+      atualizadaEm: Date.now(),
+      mensagens: estaveis,
+    };
+    salvarConversa(c);
+    setConversas([c, ...conversas.filter((x) => x.id !== conversaId)]);
+  }, [mensagens, conversaId, conversas]);
 
   // ─── Senha da equipe ────────────────────────────────────────────────────────
   const [acesso, setAcesso] = useState<"verificando" | "ok" | "bloqueado">("verificando");
@@ -328,6 +376,12 @@ export default function GeradorPage() {
     const conteudo = (textoForcado ?? texto).trim();
     if ((!conteudo && imagens.length === 0) || ocupado) return;
 
+    // Primeira mensagem de uma conversa nova: cria a conversa no histórico
+    if (!conversaIdRef.current) {
+      conversaIdRef.current = novoId();
+      setConversaId(conversaIdRef.current);
+    }
+
     const anexosEnviados = ajuste ? [] : imagens;
     const inicio = Date.now();
     const userMsg: Mensagem = {
@@ -451,12 +505,37 @@ export default function GeradorPage() {
 
   const novaConversa = () => {
     if (ocupado) parar();
+    conversaIdRef.current = null;
+    setConversaId(null);
     setMensagens([]);
     setBaseArte(null);
     setImagens([]);
     setTexto("");
     setAviso("");
+    if (window.innerWidth < 1024) setLateralAberta(false);
     textareaRef.current?.focus();
+  };
+
+  // Reabre uma conversa do histórico, do ponto em que parou
+  const abrirConversa = (c: Conversa) => {
+    if (c.id === conversaIdRef.current) return;
+    if (ocupado) parar(); // interrompe o pedido da conversa atual
+    conversaIdRef.current = c.id;
+    salvoRef.current = assinaturaDe(c.id, c.mensagens); // abrir não conta como alteração
+    setConversaId(c.id);
+    setMensagens(c.mensagens);
+    setBaseArte(null);
+    setImagens([]);
+    setTexto("");
+    setAviso("");
+    if (window.innerWidth < 1024) setLateralAberta(false);
+  };
+
+  const apagarConversa = (c: Conversa) => {
+    if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela continuam na aba Artes.`)) return;
+    setConversas((prev) => prev.filter((x) => x.id !== c.id));
+    excluirConversa(c.id);
+    if (c.id === conversaIdRef.current) novaConversa();
   };
 
   const montarNomeArquivo = (arte: ArteGerada) => {
@@ -563,6 +642,15 @@ export default function GeradorPage() {
       return s;
     });
   const limparFiltros = () => { setBusca(""); setDataDe(""); setDataAte(""); };
+
+  // Conversas agrupadas por dia da última atividade (Hoje, Ontem, ...)
+  const gruposConversas: Array<{ nome: string; itens: Conversa[] }> = [];
+  for (const c of conversas) {
+    const nome = nomePasta(chaveDia(c.atualizadaEm));
+    const ultimo = gruposConversas[gruposConversas.length - 1];
+    if (ultimo?.nome === nome) ultimo.itens.push(c);
+    else gruposConversas.push({ nome, itens: [c] });
+  }
 
   const vazio = mensagens.length === 0;
 
@@ -678,14 +766,57 @@ export default function GeradorPage() {
         className={`fixed lg:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col bg-[#0c0c0f] border-r border-white/5 transition-transform duration-200 ${lateralAberta ? "translate-x-0" : "-translate-x-full lg:hidden"}`}
       >
         <div className="flex items-center gap-2 px-3 h-14 shrink-0">
-          <Images size={17} className="text-[#2563EB]" />
-          <span className="flex-1 text-sm font-semibold text-white">Artes geradas</span>
-          <span className="text-xs text-gray-500">{artes.length}</span>
-          <button onClick={() => alternarLateral(false)} title="Fechar histórico"
+          {/* Abas: Conversas | Artes */}
+          <div className="flex-1 flex rounded-lg bg-white/5 p-0.5 text-xs font-semibold">
+            <button onClick={() => trocarAba("conversas")}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${abaLateral === "conversas" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}>
+              <MessageSquare size={13} className={abaLateral === "conversas" ? "text-[#60A5FA]" : ""} /> Conversas
+            </button>
+            <button onClick={() => trocarAba("artes")}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${abaLateral === "artes" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}>
+              <Images size={13} className={abaLateral === "artes" ? "text-[#60A5FA]" : ""} /> Artes
+              <span className="text-[10px] font-normal text-gray-500">{artes.length}</span>
+            </button>
+          </div>
+          <button onClick={() => alternarLateral(false)} title="Fechar barra lateral"
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
             <PanelLeftClose size={17} />
           </button>
         </div>
+        {abaLateral === "conversas" ? (
+          <>
+            <div className="px-3 pb-2 shrink-0">
+              <button onClick={novaConversa}
+                className="w-full flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/5 hover:border-white/20 transition-colors">
+                <SquarePen size={15} /> Nova conversa
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 pb-4">
+              {conversas.length === 0 ? (
+                <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
+                  Suas conversas aparecem aqui e ficam salvas neste navegador.
+                </p>
+              ) : gruposConversas.map((g) => (
+                <div key={g.nome}>
+                  <p className="px-2 pt-3 pb-1 text-[11px] font-semibold text-gray-500">{g.nome}</p>
+                  {g.itens.map((c) => (
+                    <div key={c.id}
+                      className={`group flex items-center rounded-lg transition-colors ${c.id === conversaId ? "bg-white/10" : "hover:bg-white/5"}`}>
+                      <button onClick={() => abrirConversa(c)} title={c.titulo}
+                        className={`flex-1 min-w-0 truncate text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
+                        {c.titulo}
+                      </button>
+                      <button onClick={() => apagarConversa(c)} title="Apagar conversa"
+                        className="p-1.5 mr-1 rounded-md text-gray-500 hover:text-red-400 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (<>
         {(
           <div className="px-3 pb-3 space-y-2 shrink-0 border-b border-white/5">
             <div className="flex gap-1.5">
@@ -740,7 +871,7 @@ export default function GeradorPage() {
               </button>
               {aberta && pasta.artes.length === 0 && (
                 <p className="text-[11px] text-gray-600 px-6 pt-1 pb-3 leading-relaxed">
-                  Nenhuma arte gerada hoje ainda. As próximas aparecem aqui e ficam salvas neste navegador.
+                  Nenhuma arte gerada hoje ainda. As próximas aparecem aqui, no histórico da equipe.
                 </p>
               )}
               {aberta && pasta.artes.length > 0 && (
@@ -773,15 +904,16 @@ export default function GeradorPage() {
             );
           })}
         </div>
+        </>)}
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
       {/* ===== TOPO ===== */}
       <header className="flex items-center gap-2 px-3 sm:px-4 h-14 shrink-0">
         {!lateralAberta && (
-          <button onClick={() => alternarLateral(true)} title="Artes geradas"
+          <button onClick={() => alternarLateral(true)} title="Conversas e artes"
             className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
-            <Images size={19} />
+            <PanelLeftOpen size={19} />
           </button>
         )}
         <button onClick={novaConversa} title="Nova conversa"

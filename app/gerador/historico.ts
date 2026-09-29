@@ -1,6 +1,9 @@
-// Histórico ANTIGO, que ficava só no navegador (IndexedDB). Hoje o histórico é
-// compartilhado na nuvem (/api/artes); isto fica só para migrar as artes antigas
-// de cada navegador para a nuvem uma única vez.
+// Dados guardados no navegador (IndexedDB):
+// - "conversas": as conversas de cada designer (como no ChatGPT). Ficam no navegador,
+//   porque o app não tem login individual. As artes em si ficam na nuvem; a conversa
+//   só guarda o endereço delas.
+// - "artes": histórico ANTIGO de artes (antes da nuvem). Só serve para migrar as artes
+//   antigas de cada navegador para a nuvem uma única vez.
 
 export interface ArteGerada {
   url: string;
@@ -12,55 +15,97 @@ export interface ArteGerada {
   tempoMs?: number; // quanto tempo a geração levou
 }
 
+export interface Mensagem {
+  id: string;
+  papel: "user" | "assistant";
+  texto: string;
+  anexos?: string[];
+  arte?: ArteGerada;
+  status?: "pensando" | "gerando" | "erro";
+  previa?: string; // prévia da arte enquanto é gerada
+  inicio?: number; // quando o pedido começou (cronômetro)
+}
+
+export interface Conversa {
+  id: string;
+  titulo: string;
+  criadaEm: number;
+  atualizadaEm: number;
+  mensagens: Mensagem[];
+}
+
 const DB = "rogga-gerador";
-const STORE = "artes";
-const LIMITE = 300; // mantém só as mais recentes para não estourar a cota do navegador
+const ARTES = "artes";
+const CONVERSAS = "conversas";
+const LIMITE_CONVERSAS = 200; // mantém só as mais recentes
 
 function abrir(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE, { keyPath: "timestamp" });
-      }
+      const db = req.result;
+      if (!db.objectStoreNames.contains(ARTES)) db.createObjectStore(ARTES, { keyPath: "timestamp" });
+      if (!db.objectStoreNames.contains(CONVERSAS)) db.createObjectStore(CONVERSAS, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function transacao<T>(modo: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+async function transacao<T>(store: string, modo: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await abrir();
   return new Promise((resolve, reject) => {
-    const req = fn(db.transaction(STORE, modo).objectStore(STORE));
+    const req = fn(db.transaction(store, modo).objectStore(store));
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-/** Todas as artes, da mais recente para a mais antiga. */
+// ─── Artes antigas (só migração) ─────────────────────────────────────────────
+
+/** Todas as artes antigas deste navegador, da mais recente para a mais antiga. */
 export async function listarArtes(): Promise<ArteGerada[]> {
   try {
-    const todas = await transacao<ArteGerada[]>("readonly", (s) => s.getAll());
+    const todas = await transacao<ArteGerada[]>(ARTES, "readonly", (s) => s.getAll());
     return todas.sort((a, b) => b.timestamp - a.timestamp);
   } catch {
-    return []; // navegador sem IndexedDB (ex: aba anônima restrita): segue sem histórico
-  }
-}
-
-export async function salvarArte(arte: ArteGerada): Promise<void> {
-  try {
-    await transacao("readwrite", (s) => s.put(arte));
-    const todas = await listarArtes();
-    for (const velha of todas.slice(LIMITE)) await excluirArte(velha.timestamp);
-  } catch {
-    // se não conseguir salvar, a arte continua na conversa atual
+    return []; // navegador sem IndexedDB (ex: aba anônima restrita)
   }
 }
 
 export async function excluirArte(timestamp: number): Promise<void> {
   try {
-    await transacao("readwrite", (s) => s.delete(timestamp));
+    await transacao(ARTES, "readwrite", (s) => s.delete(timestamp));
+  } catch {
+    // ignora
+  }
+}
+
+// ─── Conversas ───────────────────────────────────────────────────────────────
+
+/** Todas as conversas, da atualizada mais recentemente para a mais antiga. */
+export async function listarConversas(): Promise<Conversa[]> {
+  try {
+    const todas = await transacao<Conversa[]>(CONVERSAS, "readonly", (s) => s.getAll());
+    return todas.sort((a, b) => b.atualizadaEm - a.atualizadaEm);
+  } catch {
+    return [];
+  }
+}
+
+export async function salvarConversa(c: Conversa): Promise<void> {
+  try {
+    await transacao(CONVERSAS, "readwrite", (s) => s.put(c));
+    const todas = await listarConversas();
+    for (const velha of todas.slice(LIMITE_CONVERSAS)) await excluirConversa(velha.id);
+  } catch {
+    // se não conseguir salvar, a conversa continua aberta na tela
+  }
+}
+
+export async function excluirConversa(id: string): Promise<void> {
+  try {
+    await transacao(CONVERSAS, "readwrite", (s) => s.delete(id));
   } catch {
     // ignora
   }
