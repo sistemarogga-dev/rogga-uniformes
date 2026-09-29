@@ -4,7 +4,7 @@ import path from "path";
 import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
-// A geração com gpt-image-1 (quality high) pode passar de 1 minuto.
+// A geração de imagem pode passar de 1 minuto em qualidade alta.
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     const regras = (formData.get("regras") as string) || "";
     const promptUser = (formData.get("prompt") as string) || "";
     const usarMascara = (formData.get("usarMascara") as string) !== "false";
+    // "rapida" (quality medium, padrão) ou "maxima" (quality high)
+    const qualidade = (formData.get("qualidade") as string) === "maxima" ? "high" : "medium";
     const imagens = formData.getAll("imagens") as File[];
     // Edição de uma arte existente: usa a arte enviada como base no lugar do template.
     const baseImage = formData.get("baseImage") as string | null;
@@ -38,14 +40,17 @@ export async function POST(request: Request) {
 
     // Monta o prompt final = regras rígidas + instruções desta arte
     const notaFresca = baseImage
-      ? "" // modo edição: ajustar só o que foi pedido, sem refazer tudo
+      ? `
+MODO EDIÇÃO (MUITO IMPORTANTE):
+- A primeira imagem é a arte atual. Altere SOMENTE o que foi pedido acima.
+- Todo o resto permanece IDÊNTICO: mesmos modelos de produto (corte, gola, mangas, botões, formato da bag e do windbanner), mesmas cores, mesmos logos, mesmos fundos, mesmas posições e enquadramentos.`
       : `
 GEOMETRIA OBRIGATÓRIA (NÃO DESLOCAR NADA):
 - A primeira imagem é a ARTE DE REFERÊNCIA da Rogga. O resultado deve ser IDÊNTICO a ela em layout: cabeçalho, título, subtítulo, bordas douradas, etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) e rodapé permanecem exatamente iguais.
 - Os QUATRO quadros de produto têm posição e tamanho FIXOS: POLO PIQUET (quadro largo no topo), CAMISETA (meio à esquerda), BAGA PERSONALIZADA (embaixo à esquerda) e WINDBANNER (quadro alto à direita). Pinte SOMENTE dentro deles, sem ultrapassar as bordas.
 
 O QUE MUDA (E SOMENTE ISSO):
-1. Os PRODUTOS: polo piquet (frente e costas), camiseta (frente e costas), bag de cordão (mochila saco) e windbanner (bandeira com base). Mesmo tipo de produto, mesma posição, mesmo tamanho, mesmo ângulo e mesmo enquadramento da referência — mudam apenas as cores e a personalização: troque cada "LOGO AQUI" pela logomarca do cliente (peito esquerdo e costas centralizada nas camisas; centralizada na bag e no windbanner).
+1. Os PRODUTOS (MESMOS MODELOS DA REFERÊNCIA — não troque corte, gola, mangas, botões nem formato, a não ser que o designer peça): polo piquet (frente e costas), camiseta (frente e costas), bag de cordão (mochila saco) e windbanner (bandeira com base). Mesmo tipo de produto, mesma posição, mesmo tamanho, mesmo ângulo e mesmo enquadramento da referência — mudam apenas as cores e a personalização: troque cada "LOGO AQUI" pela logomarca do cliente (peito esquerdo e costas centralizada nas camisas; centralizada na bag e no windbanner).
 2. As IMAGENS DE CONTEXTO atrás dos produtos: novo cenário fotográfico ligado ao ramo do cliente, cobrindo 100% de cada quadro, com profundidade, desfoque natural e luz premium. Os produtos ficam nítidos em primeiro plano.
 - Não reaproveite as cores e os fundos da referência; crie a versão do cliente.`;
     const editPrompt = [
@@ -62,68 +67,103 @@ O QUE MUDA (E SOMENTE ISSO):
     // dentro do quadro é preenchida pelo fundo do template — nunca por branco.
     const baseComposite = rawTemplate;
 
-    // ─── AJUSTE 9:16 → 2:3 (POR ESTICAMENTO, SEM BARRAS) ─────────────────────────
-    // A gpt-image-1 só gera em 2:3 (1024×1536). Em vez de adicionar barras pretas
-    // laterais (que o modelo às vezes "invade", deslocando todo o layout e jogando as
-    // camisas/fundo para fora dos retângulos), nós ESTICAMOS o template 9:16 para 2:3.
-    // Como não há barras, o modelo não tem para onde vazar e o alinhamento fica
-    // determinístico: na saída basta desfazer o esticamento (resize de volta a 9:16).
-    const GEN_W = 1024, GEN_H = 1536; // tamanho 2:3 gerado pela gpt-image-1
-    const stretchedTemplate = await sharp(rawTemplate)
-      .resize(GEN_W, GEN_H, { fit: "fill", kernel: sharp.kernel.lanczos3 })
-      .png()
-      .toBuffer();
+    // ─── TAMANHO DE GERAÇÃO ─────────────────────────────────────────────────────
+    // gpt-image-2 aceita tamanho livre: geramos direto em 9:16 (1008x1792, múltiplos de
+    // 16), sem distorcer o template. Os modelos antigos só geram 2:3 (1024x1536): nesse
+    // caso o template é ESTICADO para 2:3 e a saída é desesticada de volta.
+    const MODELO = process.env.IMAGE_MODEL || "gpt-image-2";
+    const tamanhoDe = (modelo: string) =>
+      modelo.startsWith("gpt-image-2") ? { w: 1008, h: 1792 } : { w: 1024, h: 1536 };
 
-    // ─── IMAGENS PARA O EDIT ────────────────────────────────────────────────────
-    // Primeiro o template (base), depois todas as imagens enviadas pelo usuário.
-    const images: Buffer[] = [stretchedTemplate];
-    const names: string[] = ["template.png"];
-    const types: string[] = ["image/png"];
-
-    let primeiraImagem: { buffer: Buffer; type: string } | null = null;
-
-    for (let i = 0; i < imagens.length; i++) {
-      const f = imagens[i];
+    // ─── IMAGENS DO USUÁRIO ─────────────────────────────────────────────────────
+    const anexos: Array<{ buffer: Buffer; type: string }> = [];
+    for (const f of imagens) {
       if (f && typeof f === "object" && "size" in f && f.size > 0) {
-        const buf = Buffer.from(await f.arrayBuffer());
-        images.push(buf);
-        names.push(`imagem-${i + 1}.png`);
-        types.push(f.type || "image/png");
-        if (!primeiraImagem) primeiraImagem = { buffer: buf, type: f.type || "image/png" };
+        anexos.push({ buffer: Buffer.from(await f.arrayBuffer()), type: f.type || "image/png" });
       }
     }
 
-    // Detectar nome da marca e categoria/ramo pelo primeiro logo
-    let logomarca = "Logomarca";
-    let categoria = "Outros";
-    if (primeiraImagem) {
+    // Detectar nome da marca e categoria/ramo pelo primeiro logo (roda em paralelo
+    // com a geração da imagem, para não somar tempo).
+    const analisarLogo = async () => {
+      const r = { logomarca: "Logomarca", categoria: "Outros" };
+      if (!anexos.length) return r;
       try {
-        const base64 = primeiraImagem.buffer.toString("base64");
         const vision = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: "gpt-4.1-mini",
           messages: [{
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:${primeiraImagem.type};base64,${base64}` } },
+              { type: "image_url", image_url: { url: `data:${anexos[0].type};base64,${anexos[0].buffer.toString("base64")}` } },
               { type: "text", text: 'Analise este logotipo. Responda APENAS com um JSON no formato {"nome":"...","categoria":"..."}. "nome" = nome da marca/empresa (se ilegível, use "Cliente"). "categoria" = ramo/segmento em 1-2 palavras em português (ex: Climatização, Construção, Restaurante, Oficina, Clínica, Academia, Transporte, Tecnologia, Comércio). Nada além do JSON.' },
             ],
           }],
           max_tokens: 60,
         });
         const txt = vision.choices[0]?.message?.content?.trim() || "";
-        const json = txt.replace(/```json|```/g, "").trim();
-        const parsed = JSON.parse(json);
-        if (parsed.nome) logomarca = String(parsed.nome).replace(/^["']|["']$/g, "").slice(0, 60);
-        if (parsed.categoria) categoria = String(parsed.categoria).slice(0, 40);
+        const parsed = JSON.parse(txt.replace(/```json|```/g, "").trim());
+        if (parsed.nome) r.logomarca = String(parsed.nome).replace(/^["']|["']$/g, "").slice(0, 60);
+        if (parsed.categoria) r.categoria = String(parsed.categoria).slice(0, 40);
       } catch {
         // se falhar, mantém os padrões
       }
-    }
+      return r;
+    };
 
-    const imageFiles = await Promise.all(
-      images.map((buf, i) => toFile(buf, names[i], { type: types[i] }))
-    );
-    const imageInput = imageFiles.length === 1 ? imageFiles[0] : imageFiles;
+    // ─── EDIT ────────────────────────────────────────────────────────────────────
+    // Edição LIMPA (sem máscara): o modelo redesenha os produtos de forma holística e
+    // fiel (como no ChatGPT). A preservação do layout é feita depois, recolando só os
+    // quadros de produto no template original. input_fidelity:high mantém logos e
+    // modelos de produto fiéis à referência.
+    const gerarImagem = async (modelo: string) => {
+      const { w, h } = tamanhoDe(modelo);
+      const base = await sharp(rawTemplate)
+        .resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+        .png()
+        .toBuffer();
+      const files = await Promise.all([
+        toFile(base, "template.png", { type: "image/png" }),
+        ...anexos.map((a, i) => toFile(a.buffer, `imagem-${i + 1}.png`, { type: a.type })),
+      ]);
+      const params = {
+        model: modelo,
+        image: files.length === 1 ? files[0] : files,
+        prompt: editPrompt,
+        n: 1,
+        size: `${w}x${h}`,
+        quality: qualidade,
+        // gpt-image-2 já trabalha em alta fidelidade e recusa este parâmetro
+        ...(modelo.startsWith("gpt-image-2") ? {} : { input_fidelity: "high" }),
+        output_format: "jpeg",
+        output_compression: 95,
+      } as Parameters<typeof openai.images.edit>[0];
+      const response = (await openai.images.edit(params)) as { data?: Array<{ b64_json?: string }> };
+      const b64 = response.data?.[0]?.b64_json;
+      if (!b64) throw new Error("Falha ao gerar imagem.");
+      return Buffer.from(b64, "base64");
+    };
+
+    // Se o modelo novo não estiver disponível na conta, cai para o gpt-image-1.5.
+    const gerarComFallback = async () => {
+      try {
+        return await gerarImagem(MODELO);
+      } catch (e) {
+        const status = (e as { status?: number }).status;
+        if (MODELO !== "gpt-image-1.5" && (status === 400 || status === 403 || status === 404)) {
+          console.warn(`[gerar] ${MODELO} falhou (${status}), usando gpt-image-1.5:`, (e as Error).message);
+          return gerarImagem("gpt-image-1.5");
+        }
+        throw e;
+      }
+    };
+
+    const [imageBuffer, { logomarca, categoria }] = await Promise.all([gerarComFallback(), analisarLogo()]);
+
+    // Volta ao tamanho do template (desfaz o esticamento, se houve).
+    const geradoFull = await sharp(imageBuffer)
+      .resize(tW, tH, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .png()
+      .toBuffer();
 
     // ─── ZONAS EDITÁVEIS ─────────────────────────────────────────────────────────
     // Os 4 quadros de produto da arte de referência (public/template.png, 900x1600).
@@ -137,43 +177,6 @@ O QUE MUDA (E SOMENTE ISSO):
       { x0: 483, y0: 737, x1: 880, y1: 1396, tab: [698, 668, 782] }, // WINDBANNER
       { x0: 23, y0: 1079, x1: 463, y1: 1396, tab: [328, 298, 1126] }, // BAGA PERSONALIZADA
     ];
-
-    // ─── EDIT ────────────────────────────────────────────────────────────────────
-    // Edição LIMPA (sem máscara): o modelo redesenha os produtos de forma holística e
-    // fiel (como no ChatGPT). A preservação do layout é feita depois, recolando só os
-    // quadros de produto no template original. input_fidelity:high mantém logos nítidos.
-    const editParams: Parameters<typeof openai.images.edit>[0] = {
-      model: "gpt-image-1",
-      image: imageInput,
-      prompt: editPrompt,
-      n: 1,
-      size: "1024x1536",
-      quality: "high",
-      input_fidelity: "high",
-    } as Parameters<typeof openai.images.edit>[0];
-
-    const response = (await openai.images.edit(editParams)) as {
-      data?: Array<{ url?: string; b64_json?: string }>;
-    };
-
-    const item = response.data?.[0];
-    let imageBuffer: Buffer | undefined;
-
-    if (item?.b64_json) {
-      imageBuffer = Buffer.from(item.b64_json, "base64");
-    } else if (item?.url) {
-      const imgRes = await fetch(item.url);
-      imageBuffer = Buffer.from(await imgRes.arrayBuffer());
-    }
-
-    if (!imageBuffer) return Response.json({ error: "Falha ao gerar imagem." }, { status: 500 });
-
-    // A saída vem em 2:3 (esticada). Desfaz o esticamento voltando ao 9:16 original
-    // (resize direto para tW×tH). Como não houve barras, cada pixel volta à sua posição.
-    const geradoFull = await sharp(imageBuffer)
-      .resize(tW, tH, { fit: "fill", kernel: sharp.kernel.lanczos3 })
-      .png()
-      .toBuffer();
 
     let composto: Buffer;
     if (usarMascara) {

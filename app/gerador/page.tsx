@@ -81,6 +81,7 @@ export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
   const [vendedor, setVendedor] = useState("");
   const [usarMascara, setUsarMascara] = useState(true);
+  const [qualidade, setQualidade] = useState<"rapida" | "maxima">("rapida");
 
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState("");
@@ -108,11 +109,13 @@ export default function GeradorPage() {
     const v = localStorage.getItem("rogga-vendedor");
     if (v) setVendedor(v);
     if (localStorage.getItem("rogga-mascara") === "false") setUsarMascara(false);
+    if (localStorage.getItem("rogga-qualidade") === "maxima") setQualidade("maxima");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => { localStorage.setItem("rogga-regras-v2", regras); }, [regras]);
   useEffect(() => { if (vendedor) localStorage.setItem("rogga-vendedor", vendedor); }, [vendedor]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
+  useEffect(() => { localStorage.setItem("rogga-qualidade", qualidade); }, [qualidade]);
 
   // Progresso animado enquanto a imagem é gerada
   useEffect(() => {
@@ -244,6 +247,7 @@ export default function GeradorPage() {
       fd.append("regras", regras);
       fd.append("prompt", chat.prompt);
       fd.append("usarMascara", String(usarMascara));
+      fd.append("qualidade", qualidade);
       anexosEnviados.forEach((img) => fd.append("imagens", img.file));
       if (editando) fd.append("baseImage", editando.url);
 
@@ -272,7 +276,7 @@ export default function GeradorPage() {
       setGerandoImagem(false);
       abortRef.current = null;
     }
-  }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, vendedor]);
+  }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, qualidade, vendedor]);
 
   const parar = () => abortRef.current?.abort();
 
@@ -549,6 +553,19 @@ export default function GeradorPage() {
                   <button key={v} onClick={() => setVendedor(v)}
                     className={`py-2 px-3 rounded-xl border text-sm font-semibold transition-colors ${vendedor === v ? "border-[#C8102E] bg-[#C8102E]/10 text-[#e0435c]" : "border-white/10 text-gray-400 hover:border-white/25"}`}>
                     {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2">Qualidade da imagem</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([["rapida", "Rápida", "mais rápida, ótima para aprovar"], ["maxima", "Máxima", "mais detalhe, demora mais"]] as const).map(([v, nome, desc]) => (
+                  <button key={v} onClick={() => setQualidade(v)}
+                    className={`py-2 px-3 rounded-xl border text-left transition-colors ${qualidade === v ? "border-[#C8102E] bg-[#C8102E]/10" : "border-white/10 hover:border-white/25"}`}>
+                    <span className={`block text-sm font-semibold ${qualidade === v ? "text-[#e0435c]" : "text-gray-300"}`}>{nome}</span>
+                    <span className="block text-xs text-gray-500">{desc}</span>
                   </button>
                 ))}
               </div>

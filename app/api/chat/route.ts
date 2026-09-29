@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     ].join(" ");
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-mini",
       messages: [
         { role: "system", content: SISTEMA },
         ...mensagens.slice(-20).map((m) => ({ role: m.papel, content: m.texto || "(sem texto)" })),
