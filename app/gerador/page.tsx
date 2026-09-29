@@ -87,6 +87,8 @@ export default function GeradorPage() {
   const [aviso, setAviso] = useState("");
 
   const [arteModal, setArteModal] = useState<ArteGerada | null>(null);
+  // Artes já baixadas nesta sessão (o botão "Baixar" fica azul depois do clique)
+  const [baixadas, setBaixadas] = useState<Set<number>>(new Set());
   const [zoom, setZoom] = useState(1);
   const [configAberta, setConfigAberta] = useState(false);
   const [arrastando, setArrastando] = useState(false);
@@ -284,7 +286,8 @@ export default function GeradorPage() {
         vendedor: (editando ? editando.vendedor : "") || vendedor, timestamp: Date.now(),
       };
       atualizarMsg(respId, { arte: nova, status: undefined });
-      setBaseArte(nova);
+      // A arte nova NÃO entra em edição sozinha: só quando o designer clicar em "Editar"
+      setBaseArte(null);
       setArtes((prev) => [nova, ...prev]);
       setAgora(Date.now());
       salvarArte(nova);
@@ -344,6 +347,7 @@ export default function GeradorPage() {
       a.href = blobUrl;
       a.click();
       URL.revokeObjectURL(blobUrl);
+      setBaixadas((prev) => new Set(prev).add(arte.timestamp));
     } catch { setAviso("Erro ao baixar. Abra a arte e use clique direito > Salvar imagem."); }
   };
 
@@ -686,18 +690,20 @@ export default function GeradorPage() {
                           <img src={m.arte.url} alt="Arte gerada" onClick={() => { setArteModal(m.arte!); setZoom(1); }}
                             className={`w-full max-w-[300px] rounded-2xl border cursor-zoom-in ${baseArte?.timestamp === m.arte.timestamp ? "border-[#2563EB]/60" : "border-white/10"}`} />
                           <div className="flex flex-wrap items-center gap-1">
+                            {/* Cinza por padrão; ficam azuis só depois do clique */}
                             <button onClick={() => baixarImagem(m.arte!)}
-                              className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
-                              <Download size={14} /> Baixar
+                              className={`flex items-center gap-1.5 text-xs hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors ${baixadas.has(m.arte.timestamp) ? "text-[#60A5FA]" : "text-gray-300 hover:text-white"}`}>
+                              <Download size={14} /> {baixadas.has(m.arte.timestamp) ? "Baixada" : "Baixar"}
                             </button>
                             {baseArte?.timestamp === m.arte.timestamp ? (
-                              <span className="flex items-center gap-1.5 text-xs text-[#60A5FA] px-2.5 py-1.5">
+                              <button onClick={() => setBaseArte(null)} title="Clique para sair da edição"
+                                className="flex items-center gap-1.5 text-xs text-[#60A5FA] hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
                                 <Wand2 size={14} /> Em edição
-                              </span>
+                              </button>
                             ) : (
                               <button onClick={() => editarEsta(m.arte!)}
                                 className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
-                                <Wand2 size={14} /> Editar esta
+                                <Wand2 size={14} /> Editar
                               </button>
                             )}
                             <details className="text-xs text-gray-500 w-full">
