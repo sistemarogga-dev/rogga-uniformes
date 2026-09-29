@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen,
+  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen, Pencil,
 } from "lucide-react";
 import {
   type ArteGerada, type Mensagem, type Conversa,
@@ -531,6 +531,27 @@ export default function GeradorPage() {
     if (window.innerWidth < 1024) setLateralAberta(false);
   };
 
+  // Renomear conversa (lápis ou duplo clique no título). Não muda a ordem da lista.
+  const [renomeandoId, setRenomeandoId] = useState<string | null>(null);
+  const [tituloEditado, setTituloEditado] = useState("");
+  // Conversa em edição de verdade (ref): evita salvar duas vezes (Enter + perder foco)
+  // e garante que Esc cancela mesmo quando o campo some e dispara o "perder foco".
+  const edicaoRef = useRef<string | null>(null);
+  const comecarRenomear = (c: Conversa) => { edicaoRef.current = c.id; setRenomeandoId(c.id); setTituloEditado(c.titulo); };
+  const cancelarRenomear = () => { edicaoRef.current = null; setRenomeandoId(null); };
+  const confirmarRenomear = () => {
+    const id = edicaoRef.current;
+    edicaoRef.current = null;
+    setRenomeandoId(null);
+    if (!id) return;
+    const titulo = tituloEditado.replace(/\s+/g, " ").trim().slice(0, 80);
+    const c = conversas.find((x) => x.id === id);
+    if (!c || !titulo || titulo === c.titulo) return;
+    const renomeada = { ...c, titulo };
+    setConversas((prev) => prev.map((x) => (x.id === id ? renomeada : x)));
+    salvarConversa(renomeada);
+  };
+
   const apagarConversa = (c: Conversa) => {
     if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela continuam na aba Artes.`)) return;
     setConversas((prev) => prev.filter((x) => x.id !== c.id));
@@ -802,14 +823,34 @@ export default function GeradorPage() {
                   {g.itens.map((c) => (
                     <div key={c.id}
                       className={`group flex items-center rounded-lg transition-colors ${c.id === conversaId ? "bg-white/10" : "hover:bg-white/5"}`}>
-                      <button onClick={() => abrirConversa(c)} title={c.titulo}
-                        className={`flex-1 min-w-0 truncate text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
-                        {c.titulo}
-                      </button>
-                      <button onClick={() => apagarConversa(c)} title="Apagar conversa"
-                        className="p-1.5 mr-1 rounded-md text-gray-500 hover:text-red-400 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                        <Trash2 size={13} />
-                      </button>
+                      {renomeandoId === c.id ? (
+                        <input value={tituloEditado} autoFocus maxLength={80} aria-label="Novo nome da conversa"
+                          onChange={(e) => setTituloEditado(e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                          onBlur={confirmarRenomear}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); confirmarRenomear(); }
+                            else if (e.key === "Escape") cancelarRenomear();
+                          }}
+                          className="flex-1 min-w-0 mx-1 my-1 rounded-md bg-black/40 border border-[#2563EB] px-1.5 py-1 text-[13px] text-white focus:outline-none" />
+                      ) : (
+                        <>
+                          <button onClick={() => abrirConversa(c)} onDoubleClick={() => comecarRenomear(c)} title={c.titulo}
+                            className={`flex-1 min-w-0 truncate text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
+                            {c.titulo}
+                          </button>
+                          <div className="flex mr-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => comecarRenomear(c)} title="Renomear conversa"
+                              className="p-1.5 rounded-md text-gray-500 hover:text-white">
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={() => apagarConversa(c)} title="Apagar conversa"
+                              className="p-1.5 rounded-md text-gray-500 hover:text-red-400">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
