@@ -31,7 +31,7 @@ export interface Conversa {
   titulo: string;
   criadaEm: number;
   atualizadaEm: number;
-  mensagens: Mensagem[];
+  mensagens?: Mensagem[]; // só vem ao abrir a conversa (a lista traz só o resumo)
 }
 
 const DB = "rogga-gerador";

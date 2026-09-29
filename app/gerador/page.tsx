@@ -9,7 +9,7 @@ import {
 import {
   type ArteGerada, type Mensagem, type Conversa,
   listarArtes as listarArtesLocais, excluirArte as excluirArteLocal,
-  listarConversas, salvarConversa, excluirConversa,
+  listarConversas, excluirConversa,
 } from "./historico";
 
 // Ajustes de um clique embaixo de cada arte (editam a arte direto, sem passar pelo chat)
@@ -19,6 +19,32 @@ const AJUSTES_RAPIDOS = [
   { rotulo: "Logo maior", prompt: "Aumente um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada e legível. Não mexa na logo do peito. Mantenha todo o resto igual." },
   { rotulo: "Logo menor", prompt: "Diminua um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada. Não mexa na logo do peito. Mantenha todo o resto igual." },
 ];
+
+// Miniatura das imagens anexadas (logos, prints) para guardar na conversa: o original
+// pode ter vários MB e a conversa inteira precisa caber no limite de envio da Vercel.
+const miniaturasCache = new Map<string, string>();
+async function miniatura(src: string): Promise<string> {
+  if (!src.startsWith("data:") || src.length < 60_000) return src;
+  const pronta = miniaturasCache.get(src);
+  if (pronta) return pronta;
+  try {
+    const img = new window.Image();
+    await new Promise<void>((ok, falha) => { img.onload = () => ok(); img.onerror = () => falha(); img.src = src; });
+    const escala = Math.min(1, 320 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * escala));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * escala));
+    canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const mini = canvas.toDataURL("image/webp", 0.85); // webp mantém a transparência dos logos
+    miniaturasCache.set(src, mini);
+    return mini;
+  } catch {
+    return src;
+  }
+}
+async function mensagensLeves(msgs: Mensagem[]): Promise<Mensagem[]> {
+  return Promise.all(msgs.map(async (m) => (m.anexos?.length ? { ...m, anexos: await Promise.all(m.anexos.map(miniatura)) } : m)));
+}
 
 const segundos = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -140,15 +166,45 @@ export default function GeradorPage() {
   // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
   const [agora, setAgora] = useState(() => Date.now());
 
-  // ─── Conversas (lateral, aba "Conversas") — salvas neste navegador ─────────────
+  // ─── Conversas (lateral, aba "Conversas") — da equipe, salvas na nuvem ─────────
   const [abaLateral, setAbaLateral] = useState<"conversas" | "artes">("conversas");
-  const [conversas, setConversas] = useState<Conversa[]>([]);
+  const [conversas, setConversas] = useState<Conversa[]>([]); // só o resumo (sem mensagens)
   const [conversaId, setConversaId] = useState<string | null>(null);
   const conversaIdRef = useRef<string | null>(null); // id síncrono (usado dentro do enviar)
   const salvoRef = useRef(""); // assinatura do que já foi salvo (evita salvar à toa)
+  const [abrindoConversa, setAbrindoConversa] = useState<string | null>(null);
+  // Salvamentos em fila: um não atropela o outro (ex: renomear logo após criar)
+  const filaSalvar = useRef<Promise<unknown>>(Promise.resolve());
+  const naFila = (tarefa: () => Promise<unknown>) => {
+    filaSalvar.current = filaSalvar.current.then(tarefa).catch(() => {});
+    return filaSalvar.current;
+  };
+
+  const carregarConversas = useCallback(async () => {
+    try {
+      const r = await fetch("/api/conversas");
+      if (!r.ok) return;
+      setConversas((await r.json()).conversas || []);
+
+      // Migração única: conversas que estavam só neste navegador sobem para a nuvem
+      const locais = await listarConversas();
+      if (!locais.length) return;
+      for (const c of locais) {
+        const up = await fetch("/api/conversas", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: c.id, titulo: c.titulo, mensagens: await mensagensLeves(c.mensagens || []) }),
+        });
+        if (up.ok) await excluirConversa(c.id);
+      }
+      const r2 = await fetch("/api/conversas");
+      if (r2.ok) setConversas((await r2.json()).conversas || []);
+    } catch {
+      // sem lista agora; o gerador continua funcionando
+    }
+  }, []);
 
   useEffect(() => {
-    listarConversas().then(setConversas);
     try {
       const aba = localStorage.getItem("rogga-aba-lateral");
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -183,16 +239,19 @@ export default function GeradorPage() {
     if (assinatura === salvoRef.current) return;
     salvoRef.current = assinatura;
     const antiga = conversas.find((c) => c.id === conversaId);
-    const titulo = estaveis.find((m) => m.papel === "user")?.texto.replace(/\s+/g, " ").slice(0, 60) || "Nova conversa";
-    const c: Conversa = {
-      id: conversaId,
-      titulo: antiga?.titulo || titulo,
-      criadaEm: antiga?.criadaEm ?? Date.now(),
-      atualizadaEm: Date.now(),
-      mensagens: estaveis,
-    };
-    salvarConversa(c);
-    setConversas([c, ...conversas.filter((x) => x.id !== conversaId)]);
+    const titulo = antiga?.titulo
+      || estaveis.find((m) => m.papel === "user")?.texto.replace(/\s+/g, " ").slice(0, 60)
+      || "Nova conversa";
+    const resumo: Conversa = { id: conversaId, titulo, criadaEm: antiga?.criadaEm ?? Date.now(), atualizadaEm: Date.now() };
+    setConversas([resumo, ...conversas.filter((x) => x.id !== conversaId)]);
+    naFila(async () => {
+      const r = await fetch("/api/conversas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: conversaId, titulo, mensagens: await mensagensLeves(estaveis) }),
+      });
+      if (!r.ok) setAviso("Não foi possível salvar a conversa na nuvem. Ela continua aberta aqui.");
+    });
   }, [mensagens, conversaId, conversas]);
 
   // ─── Senha da equipe ────────────────────────────────────────────────────────
@@ -239,9 +298,19 @@ export default function GeradorPage() {
   useEffect(() => {
     fetch("/api/acesso").then((r) => r.json()).then((d) => {
       setAcesso(d.ok ? "ok" : "bloqueado");
-      if (d.ok) carregarHistorico();
+      if (d.ok) { carregarHistorico(); carregarConversas(); }
     }).catch(() => setAcesso("ok"));
-  }, [carregarHistorico]);
+  }, [carregarHistorico, carregarConversas]);
+
+  // Ao voltar para a aba, atualiza conversas e artes (para ver o que os colegas fizeram)
+  useEffect(() => {
+    if (acesso !== "ok") return;
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") { carregarConversas(); carregarHistorico(); }
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => document.removeEventListener("visibilitychange", aoVoltar);
+  }, [acesso, carregarConversas, carregarHistorico]);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,6 +321,7 @@ export default function GeradorPage() {
       if (!d.ok) { setErroSenha(d.error || "Senha incorreta."); return; }
       setSenha(""); setAcesso("ok");
       carregarHistorico();
+      carregarConversas();
     } catch { setErroSenha("Sem conexão. Tente de novo."); }
     finally { setEntrando(false); }
   };
@@ -347,7 +417,7 @@ export default function GeradorPage() {
       const textoColado = dados.getData("text/plain");
       const alvo = e.target as HTMLElement | null;
       const noComposer = alvo === textareaRef.current;
-      const emOutroCampo = !noComposer && !!alvo?.closest("input, textarea, [contenteditable]");
+      const emOutroCampo = !noComposer && typeof alvo?.closest === "function" && !!alvo.closest("input, textarea, [contenteditable]");
 
       if (arquivos.length) adicionarImagens(arquivos);
 
@@ -516,19 +586,37 @@ export default function GeradorPage() {
     textareaRef.current?.focus();
   };
 
-  // Reabre uma conversa do histórico, do ponto em que parou
-  const abrirConversa = (c: Conversa) => {
+  // Reabre uma conversa do histórico (vem da nuvem), do ponto em que parou
+  const pedidoAbrirRef = useRef<string | null>(null); // se clicar em outra antes de carregar, vale a última
+  const abrirConversa = async (c: Conversa) => {
     if (c.id === conversaIdRef.current) return;
-    if (ocupado) parar(); // interrompe o pedido da conversa atual
-    conversaIdRef.current = c.id;
-    salvoRef.current = assinaturaDe(c.id, c.mensagens); // abrir não conta como alteração
-    setConversaId(c.id);
-    setMensagens(c.mensagens);
-    setBaseArte(null);
-    setImagens([]);
-    setTexto("");
-    setAviso("");
-    if (window.innerWidth < 1024) setLateralAberta(false);
+    pedidoAbrirRef.current = c.id;
+    setAbrindoConversa(c.id);
+    try {
+      const r = await fetch(`/api/conversas?id=${encodeURIComponent(c.id)}`);
+      const d = await r.json();
+      if (pedidoAbrirRef.current !== c.id) return;
+      if (!r.ok || !d.conversa) {
+        setAviso(r.status === 404 ? "Essa conversa foi apagada por alguém da equipe." : "Não foi possível abrir a conversa.");
+        if (r.status === 404) setConversas((prev) => prev.filter((x) => x.id !== c.id));
+        return;
+      }
+      const msgs: Mensagem[] = d.conversa.mensagens || [];
+      if (ocupado) parar(); // interrompe o pedido da conversa atual
+      conversaIdRef.current = c.id;
+      salvoRef.current = assinaturaDe(c.id, msgs); // abrir não conta como alteração
+      setConversaId(c.id);
+      setMensagens(msgs);
+      setBaseArte(null);
+      setImagens([]);
+      setTexto("");
+      setAviso("");
+      if (window.innerWidth < 1024) setLateralAberta(false);
+    } catch {
+      setAviso("Sem conexão para abrir a conversa. Tente de novo.");
+    } finally {
+      if (pedidoAbrirRef.current === c.id) setAbrindoConversa(null);
+    }
   };
 
   // Renomear conversa (lápis ou duplo clique no título). Não muda a ordem da lista.
@@ -547,16 +635,25 @@ export default function GeradorPage() {
     const titulo = tituloEditado.replace(/\s+/g, " ").trim().slice(0, 80);
     const c = conversas.find((x) => x.id === id);
     if (!c || !titulo || titulo === c.titulo) return;
-    const renomeada = { ...c, titulo };
-    setConversas((prev) => prev.map((x) => (x.id === id ? renomeada : x)));
-    salvarConversa(renomeada);
+    setConversas((prev) => prev.map((x) => (x.id === id ? { ...x, titulo } : x)));
+    naFila(async () => {
+      const r = await fetch("/api/conversas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, titulo }), // sem mensagens = só renomear
+      });
+      if (!r.ok) { setAviso("Não foi possível renomear a conversa."); carregarConversas(); }
+    });
   };
 
   const apagarConversa = (c: Conversa) => {
-    if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela continuam na aba Artes.`)) return;
+    if (!window.confirm(`Apagar a conversa "${c.titulo}" para toda a equipe? As artes dela continuam na aba Artes.`)) return;
     setConversas((prev) => prev.filter((x) => x.id !== c.id));
-    excluirConversa(c.id);
     if (c.id === conversaIdRef.current) novaConversa();
+    naFila(async () => {
+      const r = await fetch(`/api/conversas?id=${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      if (!r.ok) { setAviso("Não foi possível apagar a conversa. Tente de novo."); carregarConversas(); }
+    });
   };
 
   const montarNomeArquivo = (arte: ArteGerada) => {
@@ -836,8 +933,9 @@ export default function GeradorPage() {
                       ) : (
                         <>
                           <button onClick={() => abrirConversa(c)} onDoubleClick={() => comecarRenomear(c)} title={c.titulo}
-                            className={`flex-1 min-w-0 truncate text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
-                            {c.titulo}
+                            className={`flex-1 min-w-0 flex items-center gap-1.5 text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
+                            {abrindoConversa === c.id && <Loader2 size={12} className="animate-spin shrink-0 text-gray-500" />}
+                            <span className="truncate">{c.titulo}</span>
                           </button>
                           <div className="flex mr-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                             <button onClick={() => comecarRenomear(c)} title="Renomear conversa"
