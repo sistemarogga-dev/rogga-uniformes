@@ -43,3 +43,5 @@ next-env.d.ts
 # imagens de teste geradas pelos scripts
 /scripts/*.png
 /scripts/*.jpg
+.vercel
+.env*
