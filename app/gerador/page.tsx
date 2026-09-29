@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
+  Search, CalendarDays, ChevronRight, Folder, FolderOpen,
 } from "lucide-react";
 import { type ArteGerada, listarArtes, salvarArte, excluirArte } from "./historico";
 
@@ -93,9 +94,17 @@ export default function GeradorPage() {
   // Histórico de artes geradas (lateral esquerda)
   const [artes, setArtes] = useState<ArteGerada[]>([]);
   const [lateralAberta, setLateralAberta] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
+  const [filtroDatasAberto, setFiltroDatasAberto] = useState(false);
+  // Pastas cujo estado (aberta/fechada) o designer inverteu em relação ao padrão
+  const [pastasAlternadas, setPastasAlternadas] = useState<Set<string>>(new Set());
+  // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
+  const [agora, setAgora] = useState(() => Date.now());
 
   useEffect(() => {
-    listarArtes().then(setArtes);
+    listarArtes().then((a) => { setArtes(a); setAgora(Date.now()); });
     // Desktop abre a lateral por padrão; celular começa fechada
     let salvo: string | null = null;
     try { salvo = localStorage.getItem("rogga-lateral"); } catch {}
@@ -277,6 +286,7 @@ export default function GeradorPage() {
       atualizarMsg(respId, { arte: nova, status: undefined });
       setBaseArte(nova);
       setArtes((prev) => [nova, ...prev]);
+      setAgora(Date.now());
       salvarArte(nova);
     } catch (e: unknown) {
       const cancelado = e instanceof DOMException && e.name === "AbortError";
@@ -349,8 +359,54 @@ export default function GeradorPage() {
     excluirArte(arte.timestamp);
   };
 
-  const dataCurta = (ts: number) =>
-    new Date(ts).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const hora = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+  // ─── Histórico: pesquisa, filtro de datas e pastas por dia ─────────────────────
+  // Chave do dia no fuso local (AAAA-MM-DD), a mesma usada pelos <input type="date">.
+  const chaveDia = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const nomePasta = (chave: string) => {
+    const hoje = chaveDia(agora);
+    const ontem = chaveDia(agora - 86400000);
+    if (chave === hoje) return "Hoje";
+    if (chave === ontem) return "Ontem";
+    const [a, m, d] = chave.split("-").map(Number);
+    const data = new Date(a, m - 1, d);
+    const texto = data.toLocaleDateString("pt-BR", {
+      weekday: "short", day: "2-digit", month: "short",
+      ...(a !== new Date(agora).getFullYear() ? { year: "numeric" } : {}),
+    });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  };
+
+  const filtroAtivo = !!(busca.trim() || dataDe || dataAte);
+  const termo = busca.trim().toLowerCase();
+  const artesFiltradas = artes.filter((a) => {
+    const dia = chaveDia(a.timestamp);
+    if (dataDe && dia < dataDe) return false;
+    if (dataAte && dia > dataAte) return false;
+    if (termo && !`${a.logomarca} ${a.vendedor} ${a.prompt}`.toLowerCase().includes(termo)) return false;
+    return true;
+  });
+  const pastas: Array<{ chave: string; artes: ArteGerada[] }> = [];
+  for (const a of artesFiltradas) {
+    const chave = chaveDia(a.timestamp);
+    const ultima = pastas[pastas.length - 1];
+    if (ultima?.chave === chave) ultima.artes.push(a);
+    else pastas.push({ chave, artes: [a] });
+  }
+  // Sem filtro: só a pasta mais recente começa aberta. Com filtro: todas as que têm resultado.
+  const pastaAberta = (chave: string, i: number) =>
+    filtroAtivo || (pastasAlternadas.has(chave) ? i !== 0 : i === 0);
+  const alternarPasta = (chave: string) =>
+    setPastasAlternadas((prev) => {
+      const s = new Set(prev);
+      if (s.has(chave)) s.delete(chave); else s.add(chave);
+      return s;
+    });
+  const limparFiltros = () => { setBusca(""); setDataDe(""); setDataAte(""); };
 
   const vazio = mensagens.length === 0;
 
@@ -445,14 +501,65 @@ export default function GeradorPage() {
             <PanelLeftClose size={17} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
+        {artes.length > 0 && (
+          <div className="px-3 pb-3 space-y-2 shrink-0 border-b border-white/5">
+            <div className="flex gap-1.5">
+              <div className="flex-1 flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-white/25 px-2.5">
+                <Search size={14} className="text-gray-500 shrink-0" />
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar marca, vendedor..."
+                  className="w-full bg-transparent py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none" />
+                {busca && (
+                  <button onClick={() => setBusca("")} aria-label="Limpar pesquisa" className="text-gray-500 hover:text-white"><X size={12} /></button>
+                )}
+              </div>
+              <button onClick={() => setFiltroDatasAberto((v) => !v)} title="Filtrar por data"
+                className={`p-2 rounded-lg border transition-colors ${dataDe || dataAte ? "border-[#C8102E] text-[#e0435c] bg-[#C8102E]/10" : "border-white/10 text-gray-400 hover:text-white hover:border-white/25"}`}>
+                <CalendarDays size={14} />
+              </button>
+            </div>
+            {filtroDatasAberto && (
+              <div className="grid grid-cols-2 gap-1.5">
+                <label className="text-[10px] text-gray-500">De
+                  <input type="date" value={dataDe} max={dataAte || undefined} onChange={(e) => setDataDe(e.target.value)}
+                    className="mt-0.5 w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-gray-200 [color-scheme:dark] focus:outline-none focus:border-white/25" />
+                </label>
+                <label className="text-[10px] text-gray-500">Até
+                  <input type="date" value={dataAte} min={dataDe || undefined} onChange={(e) => setDataAte(e.target.value)}
+                    className="mt-0.5 w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-gray-200 [color-scheme:dark] focus:outline-none focus:border-white/25" />
+                </label>
+              </div>
+            )}
+            {filtroAtivo && (
+              <div className="flex items-center justify-between text-[11px] text-gray-500">
+                <span>{artesFiltradas.length} de {artes.length} artes</span>
+                <button onClick={limparFiltros} className="hover:text-white underline underline-offset-2">Limpar filtros</button>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto px-3 py-3">
           {artes.length === 0 ? (
             <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
               As artes que você gerar aparecem aqui e ficam salvas neste navegador.
             </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {artes.map((arte) => (
+          ) : pastas.length === 0 ? (
+            <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
+              Nenhuma arte encontrada com esses filtros.
+            </p>
+          ) : pastas.map((pasta, i) => {
+            const aberta = pastaAberta(pasta.chave, i);
+            return (
+            <div key={pasta.chave} className="mb-1">
+              <button onClick={() => alternarPasta(pasta.chave)}
+                className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg text-left hover:bg-white/5 transition-colors">
+                <ChevronRight size={13} className={`text-gray-500 transition-transform ${aberta ? "rotate-90" : ""}`} />
+                {aberta ? <FolderOpen size={14} className="text-[#C8102E]" /> : <Folder size={14} className="text-gray-500" />}
+                <span className={`flex-1 text-xs font-semibold ${aberta ? "text-white" : "text-gray-300"}`}>{nomePasta(pasta.chave)}</span>
+                <span className="text-[10px] text-gray-500 bg-white/5 rounded-full px-1.5 py-0.5">{pasta.artes.length}</span>
+              </button>
+              {aberta && (
+            <div className="grid grid-cols-2 gap-2 pt-1.5 pb-2">
+              {pasta.artes.map((arte) => (
                 <div key={arte.timestamp}
                   className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#C8102E]/70" : "border-white/10 hover:border-white/25"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -461,10 +568,11 @@ export default function GeradorPage() {
                     className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
                   <div className="px-2 py-1.5">
                     <p className="text-[11px] font-semibold text-gray-200 truncate" title={arte.logomarca}>{arte.logomarca}</p>
-                    <p className="text-[10px] text-gray-500">{dataCurta(arte.timestamp)}</p>
+                    <p className="text-[10px] text-gray-500">{hora(arte.timestamp)}{arte.vendedor ? ` · ${arte.vendedor}` : ""}</p>
                   </div>
                   {/* Ações: aparecem no hover (desktop) e sempre no toque */}
                   <div className="absolute top-1 right-1 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                    {/* eslint-disable-next-line react-hooks/refs -- só roda no clique */}
                     <button onClick={() => editarEsta(arte)} title="Editar esta arte"
                       className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Wand2 size={12} /></button>
                     <button onClick={() => baixarImagem(arte)} title="Baixar"
@@ -475,7 +583,10 @@ export default function GeradorPage() {
                 </div>
               ))}
             </div>
-          )}
+              )}
+            </div>
+            );
+          })}
         </div>
       </aside>
 
