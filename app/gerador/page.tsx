@@ -397,6 +397,8 @@ export default function GeradorPage() {
     if (ultima?.chave === chave) ultima.artes.push(a);
     else pastas.push({ chave, artes: [a] });
   }
+  // A pasta "Hoje" aparece sempre (vazia se ainda não houver arte hoje)
+  if (!filtroAtivo && pastas[0]?.chave !== chaveDia(agora)) pastas.unshift({ chave: chaveDia(agora), artes: [] });
   // Sem filtro: só a pasta mais recente começa aberta. Com filtro: todas as que têm resultado.
   const pastaAberta = (chave: string, i: number) =>
     filtroAtivo || (pastasAlternadas.has(chave) ? i !== 0 : i === 0);
@@ -501,7 +503,7 @@ export default function GeradorPage() {
             <PanelLeftClose size={17} />
           </button>
         </div>
-        {artes.length > 0 && (
+        {(
           <div className="px-3 pb-3 space-y-2 shrink-0 border-b border-white/5">
             <div className="flex gap-1.5">
               <div className="flex-1 flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-white/25 px-2.5">
@@ -538,11 +540,7 @@ export default function GeradorPage() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-3 py-3">
-          {artes.length === 0 ? (
-            <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
-              As artes que você gerar aparecem aqui e ficam salvas neste navegador.
-            </p>
-          ) : pastas.length === 0 ? (
+          {pastas.length === 0 ? (
             <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
               Nenhuma arte encontrada com esses filtros.
             </p>
@@ -557,7 +555,12 @@ export default function GeradorPage() {
                 <span className={`flex-1 text-xs font-semibold ${aberta ? "text-white" : "text-gray-300"}`}>{nomePasta(pasta.chave)}</span>
                 <span className="text-[10px] text-gray-500 bg-white/5 rounded-full px-1.5 py-0.5">{pasta.artes.length}</span>
               </button>
-              {aberta && (
+              {aberta && pasta.artes.length === 0 && (
+                <p className="text-[11px] text-gray-600 px-6 pt-1 pb-3 leading-relaxed">
+                  Nenhuma arte gerada hoje ainda. As próximas aparecem aqui e ficam salvas neste navegador.
+                </p>
+              )}
+              {aberta && pasta.artes.length > 0 && (
             <div className="grid grid-cols-2 gap-2 pt-1.5 pb-2">
               {pasta.artes.map((arte) => (
                 <div key={arte.timestamp}
