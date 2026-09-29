@@ -3,16 +3,9 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
-  RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen,
+  RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
 } from "lucide-react";
-
-interface ArteGerada {
-  url: string;
-  prompt: string;
-  logomarca: string;
-  vendedor: string;
-  timestamp: number;
-}
+import { type ArteGerada, listarArtes, salvarArte, excluirArte } from "./historico";
 
 interface ImagemEnviada {
   id: string;
@@ -96,6 +89,24 @@ export default function GeradorPage() {
   const [zoom, setZoom] = useState(1);
   const [configAberta, setConfigAberta] = useState(false);
   const [arrastando, setArrastando] = useState(false);
+
+  // Histórico de artes geradas (lateral esquerda)
+  const [artes, setArtes] = useState<ArteGerada[]>([]);
+  const [lateralAberta, setLateralAberta] = useState(false);
+
+  useEffect(() => {
+    listarArtes().then(setArtes);
+    // Desktop abre a lateral por padrão; celular começa fechada
+    let salvo: string | null = null;
+    try { salvo = localStorage.getItem("rogga-lateral"); } catch {}
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLateralAberta(salvo ? salvo === "1" : window.innerWidth >= 1024);
+  }, []);
+
+  const alternarLateral = (aberta: boolean) => {
+    setLateralAberta(aberta);
+    try { localStorage.setItem("rogga-lateral", aberta ? "1" : "0"); } catch {}
+  };
 
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -265,6 +276,8 @@ export default function GeradorPage() {
       };
       atualizarMsg(respId, { arte: nova, status: undefined });
       setBaseArte(nova);
+      setArtes((prev) => [nova, ...prev]);
+      salvarArte(nova);
     } catch (e: unknown) {
       const cancelado = e instanceof DOMException && e.name === "AbortError";
       atualizarMsg(respId, {
@@ -326,15 +339,25 @@ export default function GeradorPage() {
 
   const editarEsta = (arte: ArteGerada) => {
     setBaseArte(arte);
+    if (window.innerWidth < 1024) setLateralAberta(false); // no celular, libera a tela
     textareaRef.current?.focus();
   };
+
+  const excluirDoHistorico = (arte: ArteGerada) => {
+    if (!window.confirm(`Excluir a arte "${arte.logomarca}" do histórico?`)) return;
+    setArtes((prev) => prev.filter((a) => a.timestamp !== arte.timestamp));
+    excluirArte(arte.timestamp);
+  };
+
+  const dataCurta = (ts: number) =>
+    new Date(ts).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
   const vazio = mensagens.length === 0;
 
   // ─── Caixa de mensagem (reaproveitada no estado vazio e no rodapé) ───────────
   const composer = (
     <div className="w-full">
-      {baseArte && !vazio && (
+      {baseArte && (
         <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={baseArte.url} alt="" className="w-6 h-10 object-cover rounded border border-white/10" />
@@ -401,13 +424,70 @@ export default function GeradorPage() {
 
   return (
     <div
-      className="flex flex-col h-dvh bg-[#131317] text-gray-100"
+      className="flex h-dvh bg-[#131317] text-gray-100"
       onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setArrastando(false); }}
       onDrop={(e) => { e.preventDefault(); setArrastando(false); if (e.dataTransfer.files.length) adicionarImagens(e.dataTransfer.files); }}
     >
+      {/* ===== HISTÓRICO DE ARTES (LATERAL) ===== */}
+      {lateralAberta && (
+        <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => alternarLateral(false)} />
+      )}
+      <aside
+        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col bg-[#0c0c0f] border-r border-white/5 transition-transform duration-200 ${lateralAberta ? "translate-x-0" : "-translate-x-full lg:hidden"}`}
+      >
+        <div className="flex items-center gap-2 px-3 h-14 shrink-0">
+          <Images size={17} className="text-[#C8102E]" />
+          <span className="flex-1 text-sm font-semibold text-white">Artes geradas</span>
+          <span className="text-xs text-gray-500">{artes.length}</span>
+          <button onClick={() => alternarLateral(false)} title="Fechar histórico"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+            <PanelLeftClose size={17} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          {artes.length === 0 ? (
+            <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
+              As artes que você gerar aparecem aqui e ficam salvas neste navegador.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {artes.map((arte) => (
+                <div key={arte.timestamp}
+                  className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#C8102E]/70" : "border-white/10 hover:border-white/25"}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={arte.url} alt={arte.logomarca} loading="lazy"
+                    onClick={() => { setArteModal(arte); setZoom(1); }}
+                    className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
+                  <div className="px-2 py-1.5">
+                    <p className="text-[11px] font-semibold text-gray-200 truncate" title={arte.logomarca}>{arte.logomarca}</p>
+                    <p className="text-[10px] text-gray-500">{dataCurta(arte.timestamp)}</p>
+                  </div>
+                  {/* Ações: aparecem no hover (desktop) e sempre no toque */}
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => editarEsta(arte)} title="Editar esta arte"
+                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Wand2 size={12} /></button>
+                    <button onClick={() => baixarImagem(arte)} title="Baixar"
+                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Download size={12} /></button>
+                    <button onClick={() => excluirDoHistorico(arte)} title="Excluir do histórico"
+                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-red-400"><Trash2 size={12} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col">
       {/* ===== TOPO ===== */}
       <header className="flex items-center gap-2 px-3 sm:px-4 h-14 shrink-0">
+        {!lateralAberta && (
+          <button onClick={() => alternarLateral(true)} title="Artes geradas"
+            className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
+            <Images size={19} />
+          </button>
+        )}
         <button onClick={novaConversa} title="Nova conversa"
           className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
           <SquarePen size={19} />
@@ -537,6 +617,7 @@ export default function GeradorPage() {
           </div>
         </>
       )}
+      </div>
 
       {/* ===== CONFIGURAÇÕES ===== */}
       {configAberta && (
@@ -608,6 +689,10 @@ export default function GeradorPage() {
             <span className="text-white text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
             <button onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomIn size={18} /></button>
+            <button onClick={() => { editarEsta(arteModal); setArteModal(null); }}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">
+              <Wand2 size={14} /> Editar
+            </button>
             <button onClick={() => baixarImagem(arteModal)}
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#C8102E] hover:bg-red-700 text-white text-xs font-semibold">
               <Download size={14} /> Baixar
