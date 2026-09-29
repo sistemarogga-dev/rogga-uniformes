@@ -1,131 +1,174 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Upload, Download, ChevronLeft, Loader2,
-  AlertCircle, CheckCircle2, X, Sparkles, User, Building2,
-  ZoomIn, ZoomOut, Maximize2, RotateCcw, Wand2,
+  Download, Loader2,
+  AlertCircle, CheckCircle2, X, Sparkles, Lock, Wand2,
+  ZoomIn, ZoomOut, Maximize2, RotateCcw, Paperclip, LogOut, BarChart3,
 } from "lucide-react";
-import { useEffect } from "react";
 
 interface ArteGerada {
   url: string;
   prompt: string;
-  cliente: string;
+  logomarca: string;
   vendedor: string;
   timestamp: number;
 }
 
-interface CoresDetalhadas {
-  poloTronco: string;
-  poloGola: string;
-  camisetaTronco: string;
-  camisetaMangas: string;
-  camisetaGola: string;
-  camisetaPunho: string;
+interface ImagemEnviada {
+  id: string;
+  file: File;
+  preview: string;
 }
 
-function MiniUploadBox({
-  label, sublabel, file, preview, onChange, onClear, accept, badge
-}: {
-  label: string; sublabel?: string; file: File | null; preview: string;
-  onChange: (f: File) => void; onClear: () => void; accept?: string; badge?: React.ReactNode;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
-      <div
-        className={`relative w-full aspect-square rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden flex items-center justify-center ${preview ? "border-[#C8102E] bg-[#C8102E]/10" : "border-white/10 hover:border-[#C8102E]/60 bg-white/5"}`}
-        onClick={() => ref.current?.click()}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onChange(f); }}
-      >
-        <input ref={ref} type="file" accept={accept || "image/*"} className="hidden"
-          onChange={(e) => e.target.files?.[0] && onChange(e.target.files[0])} />
-        {preview ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt={label} className="w-full h-full object-contain p-1" />
-            <button
-              onClick={(e) => { e.stopPropagation(); onClear(); }}
-              className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 text-gray-300 hover:text-red-400 shadow-sm">
-              <X size={10} />
-            </button>
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-1 p-2 text-center">
-            <Upload size={18} className="text-white/20" />
-            {badge}
-          </div>
-        )}
-      </div>
-      <p className="text-[10px] font-semibold text-gray-400 text-center leading-tight">{label}</p>
-      {sublabel && <p className="text-[9px] text-gray-500 text-center">{sublabel}</p>}
-    </div>
-  );
-}
+const VENDEDORES = ["Ketelly", "Manassés", "Raphael", "Jonathas"];
 
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input
-        type="text" value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder="Ex: azul marinho, #003366..."
-        className="w-full border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white/5 text-gray-200 placeholder-gray-600"
-      />
-    </div>
-  );
-}
+const PROMPT_SUGESTAO = `Faça uma arte de uniformes com os detalhes abaixo:
+1- Retire o fundo apenas dos logotipos em anexo.
+2- Polo: lisa com detalhes refinados e elegantes.
+3- Camiseta: estampa abstrata refinada.`;
+
+// Regras rígidas padrão (você pode editar à vontade na tela)
+const REGRAS_PADRAO = `Utilize EXATAMENTE o mockup Rogga gravado em sua memória como base.
+
+ATENÇÃO: O mockup é um TEMPLATE FIXO. Ele funciona como uma moldura e NÃO pode ser alterado.
+
+ALTERAÇÕES PERMITIDAS:
+✅ Camisa polo (frente)
+✅ Camisa polo (costas)
+✅ Camiseta (frente)
+✅ Camiseta (costas)
+✅ Fundo interno dos quadros onde aparecem as camisas
+
+ALTERAÇÕES PROIBIDAS:
+❌ Cabeçalho
+❌ Rodapé
+❌ Logo Rogga Uniformes
+❌ Textos
+❌ Ícones
+❌ Bordas douradas
+❌ Molduras
+❌ Espaçamentos
+❌ Tamanhos dos quadros
+❌ Posicionamento dos elementos
+❌ Cores do layout
+❌ Informações do vendedor
+❌ Estrutura geral do mockup
+
+REGRAS RÍGIDAS:
+
+1. A imagem final deve ser 1080x1920 (9:16).
+
+2. O layout deve permanecer IDÊNTICO ao modelo original.
+
+3. Apenas os conteúdos dos 4 modelos podem ser alterados:
+- Polo frente
+- Polo costas
+- Camiseta frente
+- Camiseta costas
+
+4. Sempre aplicar a logomarca enviada:
+- Peito esquerdo
+- Costas centralizadas
+Substituindo exatamente os marcadores de logo do template.
+
+5. Combinação automática de cores:
+Escolha as cores dos uniformes com base:
+- Na logomarca
+- No segmento da empresa
+- Na identidade visual do cliente
+
+6. Polo:
+- Apenas 2 botões
+- Sem listras na gola
+- Sem estampas na gola
+- Parte interna e externa da carcela obrigatoriamente da mesma cor do tronco
+
+7. Alternância de cores:
+A camisa polo e a camiseta devem possuir cores diferentes entre si para gerar contraste visual.
+
+8. Fundo interno dos quadros:
+Criar um cenário cinematográfico relacionado ao ramo da empresa.
+
+Exemplos:
+- Oficina → oficina premium
+- Construção → obra moderna
+- Clínica → ambiente médico sofisticado
+- Academia → academia premium
+- Restaurante → cozinha gourmet
+- Transporte → centro logístico
+
+9. O fundo deve possuir:
+- Profundidade
+- Desfoque natural
+- Iluminação cinematográfica
+- Alto contraste
+- Aspecto premium
+
+10. As camisas devem permanecer totalmente nítidas em primeiro plano.
+
+11. Os logotipos devem permanecer perfeitamente legíveis.
+
+12. Não criar novas áreas gráficas.
+
+13. Não remover nenhuma área gráfica existente.
+
+14. Não modificar nenhuma informação do template.
+
+15. O resultado final deve parecer que apenas as 4 imagens dos uniformes foram substituídas dentro do mockup original.`;
 
 export default function GeradorPage() {
-  const [logo, setLogo] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState("");
-  const [logo2, setLogo2] = useState<File | null>(null);
-  const [logo2Preview, setLogo2Preview] = useState("");
-  const [estampa, setEstampa] = useState<File | null>(null);
-  const [estampaPreview, setEstampaPreview] = useState("");
-
-  const [modoEstampa, setModoEstampa] = useState<"carregar" | "criar">("criar");
-  const [estampaPrompt, setEstampaPrompt] = useState("");
-  const [criandoEstampa, setCriandoEstampa] = useState(false);
-  const [erroEstampa, setErroEstampa] = useState("");
-
-  const [cliente, setCliente] = useState("");
+  const [regras, setRegras] = useState(REGRAS_PADRAO);
   const [vendedor, setVendedor] = useState("");
-
-  const [tipoCores, setTipoCores] = useState<"automatica" | "detalhada">("automatica");
-  const [cores, setCores] = useState<CoresDetalhadas>({
-    poloTronco: "", poloGola: "",
-    camisetaTronco: "", camisetaMangas: "", camisetaGola: "", camisetaPunho: "",
-  });
-
-  const [detalhes, setDetalhes] = useState<Record<string, string | boolean>>({
-    alternarCores: true,
-    golaV: false,
-    mangaLonga: false,
-    usarEstampa: "",
-    usarLogo2: "",
-    mudarCoresEstampa: "",
-    punhoBarra: "",
-    bandeiras: "",
-    logo2OutroPeito: "",
-  });
+  const [prompt, setPrompt] = useState(PROMPT_SUGESTAO);
+  const [imagens, setImagens] = useState<ImagemEnviada[]>([]);
+  const [usarMascara, setUsarMascara] = useState(true);
 
   const [gerando, setGerando] = useState(false);
+  const [melhorandoPrompt, setMelhorandoPrompt] = useState(false);
   const [progresso, setProgresso] = useState(0);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [imagemAtual, setImagemAtual] = useState<ArteGerada | null>(null);
+  const [arteParaEditar, setArteParaEditar] = useState<ArteGerada | null>(null);
   const [historico, setHistorico] = useState<ArteGerada[]>([]);
   const [zoom, setZoom] = useState(1);
   const [modalAberto, setModalAberto] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
 
+  const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const router = useRouter();
+  const [usuario, setUsuario] = useState<{ nome: string; papel: string } | null>(null);
+
   useEffect(() => {
+    fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setUsuario(d); });
+  }, []);
+
+  const sair = async () => {
+    await fetch("/api/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
+
+  // Lembra as regras entre sessões (salva no navegador)
+  useEffect(() => {
+    const salvas = localStorage.getItem("rogga-regras");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (salvas) setRegras(salvas);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("rogga-regras", regras);
+  }, [regras]);
+
+  // Barra de progresso animada enquanto gera
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (!gerando) { setProgresso(0); return; }
     setProgresso(5);
+    /* eslint-enable react-hooks/set-state-in-effect */
     const etapas = [
       { p: 15, t: 2000 }, { p: 30, t: 5000 }, { p: 45, t: 10000 },
       { p: 60, t: 18000 }, { p: 75, t: 28000 }, { p: 88, t: 40000 }, { p: 95, t: 52000 },
@@ -134,100 +177,155 @@ export default function GeradorPage() {
     return () => timers.forEach(clearTimeout);
   }, [gerando]);
 
-  const handleLogo = useCallback((f: File) => {
-    setLogo(f);
-    const r = new FileReader(); r.onload = (e) => setLogoPreview(e.target?.result as string); r.readAsDataURL(f);
-  }, []);
-  const handleLogo2 = useCallback((f: File) => {
-    setLogo2(f);
-    const r = new FileReader(); r.onload = (e) => setLogo2Preview(e.target?.result as string); r.readAsDataURL(f);
-  }, []);
-  const handleEstampa = useCallback((f: File) => {
-    setEstampa(f);
-    const r = new FileReader(); r.onload = (e) => setEstampaPreview(e.target?.result as string); r.readAsDataURL(f);
-  }, []);
-
-  const base64ToFile = useCallback(async (dataUrl: string, filename: string): Promise<File> => {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    return new File([blob], filename, { type: "image/png" });
+  const adicionarImagens = useCallback((files: FileList | File[]) => {
+    const novas: ImagemEnviada[] = [];
+    Array.from(files).forEach((f) => {
+      if (!f.type.startsWith("image/")) return;
+      const id = `${f.name}-${f.size}-${f.lastModified}-${Math.round(performance.now())}`;
+      const r = new FileReader();
+      r.onload = (e) => {
+        setImagens((prev) =>
+          prev.some((x) => x.id === id) ? prev : [...prev, { id, file: f, preview: e.target?.result as string }]
+        );
+      };
+      r.readAsDataURL(f);
+      novas.push({ id, file: f, preview: "" });
+    });
   }, []);
 
-  const criarEstampaIA = useCallback(async () => {
-    if (!estampaPrompt.trim()) { setErroEstampa("Descreva a estampa que deseja criar."); return; }
-    setCriandoEstampa(true); setErroEstampa("");
+  const removerImagem = (id: string) => setImagens((prev) => prev.filter((x) => x.id !== id));
+
+  // Colar imagens com Ctrl+V (de qualquer lugar)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const arquivos: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) arquivos.push(f);
+        }
+      }
+      if (arquivos.length) {
+        e.preventDefault();
+        adicionarImagens(arquivos);
+        setSucesso(`${arquivos.length} imagem${arquivos.length !== 1 ? "ns" : ""} colada${arquivos.length !== 1 ? "s" : ""}!`);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [adicionarImagens]);
+
+  const melhorarPromptIA = useCallback(async () => {
+    if (!prompt.trim()) { setErro("Escreva um rascunho no prompt para a IA aprimorar."); return; }
+    setMelhorandoPrompt(true); setErro(""); setSucesso("");
     try {
-      const res = await fetch("/api/criar-estampa", {
+      const res = await fetch("/api/melhorar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: estampaPrompt }),
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setEstampaPreview(data.url);
-      const file = await base64ToFile(data.url, "estampa-ia.png");
-      setEstampa(file);
+      setPrompt(data.melhorado);
+      setSucesso("Prompt aprimorado pela IA! Revise e gere a arte.");
     } catch (e: unknown) {
-      setErroEstampa(e instanceof Error ? e.message : "Erro ao criar estampa.");
-    } finally { setCriandoEstampa(false); }
-  }, [estampaPrompt, base64ToFile]);
-
-  const setDetalhe = (key: string, value: string | boolean) =>
-    setDetalhes(prev => ({ ...prev, [key]: value }));
+      setErro(e instanceof Error ? e.message : "Erro ao gerar prompt.");
+    } finally { setMelhorandoPrompt(false); }
+  }, [prompt]);
 
   const gerarArte = useCallback(async () => {
-    if (!cliente.trim()) { setErro("Informe o nome do cliente."); return; }
+    if (!prompt.trim()) { setErro(arteParaEditar ? "Descreva o que deseja mudar na arte." : "Escreva o prompt da arte que deseja gerar."); return; }
     setGerando(true); setErro(""); setSucesso("");
     try {
       const fd = new FormData();
-      if (logo) fd.append("logo", logo);
-      if (logo2) fd.append("logo2", logo2);
-      if (estampa) fd.append("estampa", estampa);
-      fd.append("cliente", cliente);
-      fd.append("vendedor", vendedor);
-      fd.append("tipoCores", tipoCores);
-      fd.append("cores", JSON.stringify(cores));
-      fd.append("detalhes", JSON.stringify(detalhes));
-      const res = await fetch("/api/gerar", { method: "POST", body: fd });
+      fd.append("regras", regras);
+      fd.append("prompt", prompt);
+      fd.append("usarMascara", String(usarMascara));
+      imagens.forEach((img) => fd.append("imagens", img.file));
+      // Modo edição: envia a arte atual como base
+      if (arteParaEditar) fd.append("baseImage", arteParaEditar.url);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const res = await fetch("/api/gerar", { method: "POST", body: fd, signal: controller.signal });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      const nova: ArteGerada = { url: data.url, prompt: data.prompt, cliente, vendedor, timestamp: Date.now() };
+      // Na edição sem novo logo, mantém o nome da marca da arte original
+      const nomeMarca = imagens.length > 0 ? (data.logomarca || "Logomarca") : (arteParaEditar?.logomarca || data.logomarca || "Logomarca");
+      const nova: ArteGerada = { url: data.url, prompt: data.prompt, logomarca: nomeMarca, vendedor: arteParaEditar?.vendedor || vendedor, timestamp: Date.now() };
       setImagemAtual(nova);
-      setHistorico(prev => [nova, ...prev.slice(0, 11)]);
-      setSucesso("Arte gerada com sucesso!");
+      setHistorico((prev) => [nova, ...prev.slice(0, 11)]);
+      setImagens([]); // limpa as imagens anexadas após gerar
+      setPrompt(arteParaEditar ? "" : PROMPT_SUGESTAO); // edição: limpa | nova arte: volta a sugestão
+      if (arteParaEditar) setArteParaEditar(nova); // permite continuar editando a nova arte
+      setSucesso(arteParaEditar ? "Edição aplicada!" : "Arte gerada com sucesso!");
     } catch (e: unknown) {
-      setErro(e instanceof Error ? e.message : "Erro ao gerar arte.");
-    } finally { setGerando(false); }
-  }, [logo, logo2, estampa, cliente, vendedor, tipoCores, cores, detalhes]);
-
-  const baixarImagem = useCallback(async (url: string, nome: string) => {
-    try {
-      const a = document.createElement("a");
-      a.download = `rogga-${nome}-${Date.now()}.png`;
-      if (url.startsWith("data:")) { a.href = url; a.click(); }
-      else {
-        const res = await fetch(url); const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob); a.href = blobUrl; a.click(); URL.revokeObjectURL(blobUrl);
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setSucesso(""); setErro("Geração cancelada.");
+      } else {
+        setErro(e instanceof Error ? e.message : "Erro ao gerar arte.");
       }
+    } finally { setGerando(false); abortRef.current = null; }
+  }, [regras, prompt, usarMascara, imagens, vendedor, arteParaEditar]);
+
+  const cancelarGeracao = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const montarNomeArquivo = (arte: ArteGerada) => {
+    const limpa = (s: string) => s.replace(/[\\/:*?"<>|]/g, "").trim();
+    const logo = limpa(arte.logomarca) || "Logomarca";
+    const vend = limpa(arte.vendedor) || "Vendedor";
+    return `${logo} - Proposta de Uniformes - ${vend}.webp`;
+  };
+
+  const baixarImagem = useCallback(async (arte: ArteGerada) => {
+    try {
+      // Carrega a imagem e converte para WebP via canvas
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("load"));
+        img.src = arte.url;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("canvas");
+      ctx.drawImage(img, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.95));
+      if (!blob) throw new Error("webp");
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.download = montarNomeArquivo(arte);
+      a.href = blobUrl;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
     } catch { setErro("Erro ao baixar. Tente clique direito > Salvar imagem."); }
   }, []);
 
-  // classes reutilizáveis dark
   const card = "bg-[#1a1a1f] rounded-2xl border border-white/8 p-4";
-  const inputCls = "w-full border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white/5 text-gray-200 placeholder-gray-600";
-  const inputXsCls = "w-full border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-white/5 text-gray-200 placeholder-gray-600";
+  const textareaCls = "w-full border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#C8102E] bg-white/5 text-gray-200 placeholder-gray-600 resize-y leading-relaxed";
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0f0f13]">
       <header className="bg-[#1a1a1f] border-b border-white/5 shadow-md sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-1 text-gray-500 hover:text-white transition-colors text-sm">
-            <ChevronLeft size={16} /> Início
-          </Link>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex-1">
             <h1 className="text-lg font-bold text-white">ROGGA UNIFORMES</h1>
-            <p className="text-[#C8102E] text-xs font-medium">Gerador de Artes para Clientes</p>
+            <p className="text-[#C8102E] text-xs font-medium">Gerador de Artes</p>
           </div>
-          <span className="text-xs text-gray-500">{historico.length} arte{historico.length !== 1 ? "s" : ""} gerada{historico.length !== 1 ? "s" : ""}</span>
+          <Link href={usuario?.papel === "admin" ? "/admin" : "/dashboard"}
+            className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white border border-white/10 rounded-full px-4 py-1.5">
+            <BarChart3 size={14} /> Painel
+          </Link>
+          {usuario && <span className="text-sm text-gray-400 hidden sm:inline">{usuario.nome}</span>}
+          <button onClick={sair} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-red-400">
+            <LogOut size={15} /> Sair
+          </button>
         </div>
       </header>
 
@@ -236,198 +334,121 @@ export default function GeradorPage() {
         {/* ===== FORMULÁRIO ===== */}
         <div className="space-y-5">
           <div>
-            <h2 className="text-xl font-bold text-white">Novo Pedido de Arte</h2>
-            <p className="text-gray-500 text-sm">Preencha os dados e gere a proposta</p>
+            <h2 className="text-xl font-bold text-white">{arteParaEditar ? "Editar Arte" : "Nova Arte"}</h2>
+            <p className="text-gray-500 text-sm">{arteParaEditar ? "Descreva o que deseja mudar na arte atual" : "Escreva as regras, o prompt e adicione as imagens"}</p>
           </div>
 
-          {/* Logos e Imagens */}
-          <div className={card + " space-y-3"}>
-            <p className="text-sm font-bold text-gray-300">📎 Imagens</p>
-
-            <div className="flex gap-3">
-              <MiniUploadBox label="Logo Principal" sublabel="*obrigatório"
-                file={logo} preview={logoPreview} onChange={handleLogo}
-                onClear={() => { setLogo(null); setLogoPreview(""); }} />
-              <MiniUploadBox label="2º Logo" sublabel="opcional"
-                file={logo2} preview={logo2Preview} onChange={handleLogo2}
-                onClear={() => { setLogo2(null); setLogo2Preview(""); }} />
-              <MiniUploadBox label="Estampa" sublabel={modoEstampa === "criar" && estampaPreview ? "IA ✓" : "opcional"}
-                file={estampa} preview={estampaPreview}
-                onChange={(f) => { setModoEstampa("carregar"); handleEstampa(f); }}
-                onClear={() => { setEstampa(null); setEstampaPreview(""); setEstampaPrompt(""); }}
-                badge={<p className="text-[9px] text-gray-500 leading-tight">Carregar<br />ou criar IA</p>}
-              />
-            </div>
-
-            {/* Painel estampa */}
-            <div className="border border-white/8 rounded-xl p-3 space-y-2 bg-white/3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-gray-400">✨ Estampa (padrão de fundo)</p>
-                <div className="flex rounded-lg overflow-hidden border border-white/10">
-                  <button
-                    onClick={() => { setModoEstampa("carregar"); setEstampa(null); setEstampaPreview(""); }}
-                    className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold transition-colors ${modoEstampa === "carregar" ? "bg-[#C8102E] text-white" : "bg-transparent text-gray-400 hover:text-gray-200"}`}>
-                    <Upload size={10} /> Carregar
-                  </button>
-                  <button
-                    onClick={() => setModoEstampa("criar")}
-                    className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold transition-colors ${modoEstampa === "criar" ? "bg-purple-600 text-white" : "bg-transparent text-gray-400 hover:text-gray-200"}`}>
-                    <Wand2 size={10} /> Criar com IA
-                  </button>
-                </div>
+          {/* Aviso de modo edição */}
+          {arteParaEditar && (
+            <div className="flex items-center gap-3 bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={arteParaEditar.url} alt="Arte sendo editada" className="w-12 h-20 object-cover rounded-lg border border-white/10" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-blue-300">✏️ Editando esta arte</p>
+                <p className="text-[11px] text-blue-400/80">Escreva no prompt só o que mudar. Ex: &quot;deixe a polo vermelha&quot;.</p>
               </div>
+              <button onClick={() => { setArteParaEditar(null); setPrompt(PROMPT_SUGESTAO); }}
+                className="text-xs text-gray-400 hover:text-white border border-white/10 rounded-lg px-3 py-1.5">
+                Sair da edição
+              </button>
+            </div>
+          )}
 
-              {modoEstampa === "criar" && (
-                <div className="space-y-2">
-                  <textarea value={estampaPrompt} onChange={(e) => setEstampaPrompt(e.target.value)}
-                    placeholder="Descreva o padrão de fundo... ex: chamas laranja e preto, listras diagonais azul e branco, ondas abstratas, camuflagem, geométrico futurista..."
-                    rows={2}
-                    className="w-full border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-purple-500 bg-white/5 text-gray-200 placeholder-gray-600 resize-none" />
-                  {erroEstampa && <p className="text-xs text-red-400">{erroEstampa}</p>}
-                  <button onClick={criarEstampaIA} disabled={criandoEstampa || !estampaPrompt.trim()}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    {criandoEstampa ? <><Loader2 size={13} className="animate-spin" /> Criando...</> : <><Wand2 size={13} /> Criar Estampa com IA</>}
-                  </button>
-                  {estampaPreview && (
-                    <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 rounded-lg p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={estampaPreview} alt="Estampa gerada" className="h-10 w-10 object-contain rounded" />
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-purple-300">Estampa criada!</p>
-                        <p className="text-[10px] text-purple-400">Pronta para usar na arte</p>
-                      </div>
-                      <button onClick={() => { setEstampa(null); setEstampaPreview(""); setEstampaPrompt(""); }}
-                        className="text-gray-500 hover:text-red-400"><X size={13} /></button>
+          {/* Vendedor (usado no nome do arquivo) */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-2">Vendedor(a)</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {VENDEDORES.map((v) => (
+                <button key={v} onClick={() => setVendedor(v)}
+                  className={`py-2.5 px-3 rounded-xl border-2 text-sm font-semibold transition-all ${vendedor === v ? "border-[#C8102E] bg-[#C8102E]/10 text-[#C8102E]" : "border-white/10 text-gray-400 hover:border-white/20"}`}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Regras rígidas */}
+          <div className={card + " space-y-2"}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                <Lock size={14} className="text-[#C8102E]" /> Regras rígidas
+              </p>
+              <button onClick={() => setRegras(REGRAS_PADRAO)}
+                className="text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                <RotateCcw size={11} /> Restaurar padrão
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500">O que a IA NUNCA pode mudar. Fica salvo automaticamente.</p>
+            <textarea value={regras} onChange={(e) => setRegras(e.target.value)} rows={10}
+              className={textareaCls + " text-xs"} placeholder="Ex: não altere o cabeçalho nem o rodapé..." />
+          </div>
+
+          {/* Prompt da arte (com anexos de imagem integrados) */}
+          <div className={card + " space-y-2"}>
+            <p className="text-sm font-bold text-gray-300 flex items-center gap-2">
+              <Wand2 size={14} className="text-[#C8102E]" /> Prompt da arte
+            </p>
+            <p className="text-[11px] text-gray-500">Descreva a arte e anexe os logos/estampas aqui mesmo (botão de anexo, arrastar ou Ctrl+V).</p>
+
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) adicionarImagens(e.dataTransfer.files); }}
+              className="border border-white/10 rounded-xl bg-white/5 focus-within:border-[#C8102E] overflow-hidden"
+            >
+              <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={6}
+                className="w-full bg-transparent px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-y leading-relaxed focus:outline-none"
+                placeholder={PROMPT_SUGESTAO} />
+
+              {/* Miniaturas das imagens anexadas */}
+              {imagens.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-3 pb-2">
+                  {imagens.map((img) => (
+                    <div key={img.id} className="relative w-14 h-14 rounded-lg border border-[#C8102E]/40 bg-[#C8102E]/5 overflow-hidden flex items-center justify-center">
+                      {img.preview ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={img.preview} alt={img.file.name} className="w-full h-full object-contain p-0.5" />
+                      ) : (
+                        <Loader2 size={14} className="animate-spin text-gray-500" />
+                      )}
+                      <button onClick={() => removerImagem(img.id)}
+                        className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5 text-gray-300 hover:text-red-400">
+                        <X size={10} />
+                      </button>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
-              {modoEstampa === "carregar" && !estampaPreview && (
-                <p className="text-[10px] text-gray-600">Clique na caixa &quot;Estampa&quot; acima para carregar, ou mude para &quot;Criar com IA&quot;.</p>
-              )}
-              {modoEstampa === "carregar" && estampaPreview && (
-                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-lg p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={estampaPreview} alt="Estampa" className="h-10 w-10 object-contain rounded" />
-                  <div className="flex-1">
-                    <p className="text-xs font-semibold text-green-400">Estampa carregada</p>
-                    <p className="text-[10px] text-green-500 truncate">{estampa?.name}</p>
-                  </div>
-                  <button onClick={() => { setEstampa(null); setEstampaPreview(""); }}
-                    className="text-gray-500 hover:text-red-400"><X size={13} /></button>
+
+              {/* Barra de ações */}
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-white/5">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => fileRef.current?.click()}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-[#C8102E] transition-colors">
+                    <Paperclip size={14} /> Anexar imagem
+                  </button>
+                  <button onClick={melhorarPromptIA} disabled={melhorandoPrompt}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-50">
+                    {melhorandoPrompt ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {melhorandoPrompt ? "Gerando..." : "Gerar prompt com IA"}
+                  </button>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Cliente e Vendedor */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-1"><Building2 size={13} className="inline mr-1" />Cliente / Empresa</label>
-              <input type="text" value={cliente} onChange={(e) => setCliente(e.target.value)}
-                placeholder="Nome da empresa" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-1"><User size={13} className="inline mr-1" />Vendedor(a)</label>
-              <input type="text" value={vendedor} onChange={(e) => setVendedor(e.target.value)}
-                placeholder="Nome do vendedor" className={inputCls} />
-            </div>
-          </div>
-
-          {/* Combinação de Cores */}
-          <div className={card + " space-y-4"}>
-            <p className="text-sm font-bold text-gray-300">🎨 Combinação de Cores</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setTipoCores("automatica")}
-                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${tipoCores === "automatica" ? "border-[#C8102E] bg-[#C8102E]/10 text-[#C8102E]" : "border-white/10 text-gray-500 hover:border-white/20"}`}>
-                🎨 Automática
-                <span className="block text-xs font-normal opacity-70">Baseada no logotipo</span>
-              </button>
-              <button onClick={() => setTipoCores("detalhada")}
-                className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all text-left ${tipoCores === "detalhada" ? "border-[#C8102E] bg-[#C8102E]/10 text-[#C8102E]" : "border-white/10 text-gray-500 hover:border-white/20"}`}>
-                ✏️ Detalhada
-                <span className="block text-xs font-normal opacity-70">Especificar cada peça</span>
-              </button>
-            </div>
-
-            {tipoCores === "automatica" && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={detalhes.alternarCores as boolean}
-                  onChange={(e) => setDetalhe("alternarCores", e.target.checked)}
-                  className="accent-[#C8102E] w-4 h-4" />
-                <span className="text-sm text-gray-400">Alternar cores entre polo e camiseta</span>
-              </label>
-            )}
-
-            {tipoCores === "detalhada" && (
-              <div className="space-y-3">
-                <div className="border border-white/8 rounded-xl p-3 space-y-2">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Camisa Polo</p>
-                  <ColorField label="Tronco e mangas" value={cores.poloTronco} onChange={(v) => setCores(p => ({ ...p, poloTronco: v }))} />
-                  <ColorField label="Gola e punhos" value={cores.poloGola} onChange={(v) => setCores(p => ({ ...p, poloGola: v }))} />
-                </div>
-                <div className="border border-white/8 rounded-xl p-3 space-y-2">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Camiseta</p>
-                  <ColorField label="Tronco" value={cores.camisetaTronco} onChange={(v) => setCores(p => ({ ...p, camisetaTronco: v }))} />
-                  <ColorField label="Mangas" value={cores.camisetaMangas} onChange={(v) => setCores(p => ({ ...p, camisetaMangas: v }))} />
-                  <ColorField label="Gola" value={cores.camisetaGola} onChange={(v) => setCores(p => ({ ...p, camisetaGola: v }))} />
-                  <ColorField label="Punho" value={cores.camisetaPunho} onChange={(v) => setCores(p => ({ ...p, camisetaPunho: v }))} />
-                </div>
+                <span className="text-[10px] text-gray-600 shrink-0">{imagens.length} anexada{imagens.length !== 1 ? "s" : ""}</span>
               </div>
-            )}
+            </div>
+
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={(e) => { if (e.target.files?.length) adicionarImagens(e.target.files); e.target.value = ""; }} />
           </div>
 
-          {/* Detalhes Opcionais */}
-          <div className={card + " space-y-3"}>
-            <p className="text-sm font-bold text-gray-300">⚙️ Detalhes Opcionais</p>
+          {/* Opção da máscara */}
+          <label className="flex items-start gap-2 cursor-pointer px-1">
+            <input type="checkbox" checked={usarMascara} onChange={(e) => setUsarMascara(e.target.checked)}
+              className="accent-[#C8102E] w-4 h-4 mt-0.5" />
+            <span className="text-sm text-gray-400">
+              Travar tudo, menos as camisas <span className="text-gray-600">(recomendado — protege cabeçalho, rodapé e bordas)</span>
+            </span>
+          </label>
 
-            <CheckItem label="Gola V na camiseta"
-              checked={detalhes.golaV as boolean} onChange={(v) => setDetalhe("golaV", v)} />
-            <CheckItem label="Manga longa com punhos na mesma cor das mangas"
-              checked={detalhes.mangaLonga as boolean} onChange={(v) => setDetalhe("mangaLonga", v)} />
-
-            <SelectItem label="Usar estampa anexada em:"
-              value={detalhes.usarEstampa as string} onChange={(v) => setDetalhe("usarEstampa", v)}
-              options={[{ value: "", label: "Não usar" }, { value: "polo", label: "Polo" }, { value: "camiseta", label: "Camiseta" }, { value: "ambas", label: "Ambas" }]} />
-
-            {detalhes.usarEstampa && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Mudar cores da estampa para:</label>
-                <input type="text" value={detalhes.mudarCoresEstampa as string}
-                  onChange={(e) => setDetalhe("mudarCoresEstampa", e.target.value)}
-                  placeholder="Ex: laranja e preto (deixe vazio para manter)"
-                  className={inputXsCls} />
-              </div>
-            )}
-
-            <SelectItem label="Usar 2º logo em:"
-              value={detalhes.usarLogo2 as string} onChange={(v) => setDetalhe("usarLogo2", v)}
-              options={[{ value: "", label: "Não usar" }, { value: "polo", label: "Polo" }, { value: "camiseta", label: "Camiseta" }, { value: "ambas", label: "Ambas" }]} />
-
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Punho com fina barra em:</label>
-              <input type="text" value={detalhes.punhoBarra as string}
-                onChange={(e) => setDetalhe("punhoBarra", e.target.value)}
-                placeholder="Ex: ambas as camisas, barra dourada"
-                className={inputXsCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Bandeiras nos braços (somente frente):</label>
-              <input type="text" value={detalhes.bandeiras as string}
-                onChange={(e) => setDetalhe("bandeiras", e.target.value)}
-                placeholder="Ex: bandeira do Brasil nos dois braços da camiseta"
-                className={inputXsCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">2º logo no outro peito em:</label>
-              <input type="text" value={detalhes.logo2OutroPeito as string}
-                onChange={(e) => setDetalhe("logo2OutroPeito", e.target.value)}
-                placeholder="Ex: polo e camiseta"
-                className={inputXsCls} />
-            </div>
-          </div>
-
-          {/* Alertas */}
           {erro && (
             <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm">
               <AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{erro}</span>
@@ -439,11 +460,24 @@ export default function GeradorPage() {
             </div>
           )}
 
-          <button onClick={gerarArte} disabled={gerando}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#C8102E] text-white font-bold text-base hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-900/30">
-            {gerando ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-            {gerando ? "Gerando arte... aguarde até 60s" : "Gerar Arte"}
-          </button>
+          {gerando ? (
+            <div className="flex gap-2">
+              <div className="flex-1 flex items-center justify-center gap-2 py-4 rounded-xl bg-[#C8102E]/40 text-white font-bold text-base">
+                <Loader2 size={20} className="animate-spin" />
+                {arteParaEditar ? "Aplicando edição..." : "Gerando arte..."}
+              </div>
+              <button onClick={cancelarGeracao}
+                className="flex items-center justify-center gap-2 px-5 py-4 rounded-xl border-2 border-red-500/60 text-red-300 font-bold hover:bg-red-500/10 transition-colors">
+                <X size={20} /> Parar
+              </button>
+            </div>
+          ) : (
+            <button onClick={gerarArte}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#C8102E] text-white font-bold text-base hover:bg-red-700 transition-colors shadow-lg shadow-red-900/30">
+              <Sparkles size={20} />
+              {arteParaEditar ? "Aplicar Edição" : "Gerar Arte"}
+            </button>
+          )}
         </div>
 
         {/* ===== RESULTADO ===== */}
@@ -458,22 +492,14 @@ export default function GeradorPage() {
               <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/3">
                 <span className="text-xs text-gray-500 font-medium">Zoom: {Math.round(zoom * 100)}%</span>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Diminuir">
-                    <ZoomOut size={16} />
-                  </button>
+                  <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Diminuir"><ZoomOut size={16} /></button>
                   <button onClick={() => setZoom(1)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="100%">
-                    <RotateCcw size={14} />
-                  </button>
-                  <button onClick={() => setZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Ampliar">
-                    <ZoomIn size={16} />
-                  </button>
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="100%"><RotateCcw size={14} /></button>
+                  <button onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Ampliar"><ZoomIn size={16} /></button>
                   <button onClick={() => setModalAberto(true)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors ml-1" title="Tela cheia">
-                    <Maximize2 size={15} />
-                  </button>
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors ml-1" title="Tela cheia"><Maximize2 size={15} /></button>
                 </div>
               </div>
             )}
@@ -483,21 +509,12 @@ export default function GeradorPage() {
                 <div className="text-center">
                   <Loader2 size={40} className="animate-spin text-[#C8102E] mx-auto mb-3" />
                   <p className="text-gray-300 font-semibold text-sm">Gerando sua arte...</p>
-                  <p className="text-gray-600 text-xs mt-1">A IA está criando a proposta. Isso pode levar até 60 segundos.</p>
+                  <p className="text-gray-600 text-xs mt-1">A IA está criando a proposta. Pode levar até 60 segundos.</p>
                 </div>
                 <div className="w-full max-w-xs space-y-2">
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Progresso</span><span>{progresso}%</span>
-                  </div>
+                  <div className="flex justify-between text-xs text-gray-500"><span>Progresso</span><span>{progresso}%</span></div>
                   <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
                     <div className="h-3 rounded-full bg-[#C8102E] transition-all duration-1000 ease-out" style={{ width: `${progresso}%` }} />
-                  </div>
-                  <div className="text-xs text-gray-600 text-center">
-                    {progresso < 20 && "Analisando o logotipo..."}
-                    {progresso >= 20 && progresso < 45 && "Preparando o template..."}
-                    {progresso >= 45 && progresso < 70 && "Aplicando cores e logos..."}
-                    {progresso >= 70 && progresso < 90 && "Refinando detalhes..."}
-                    {progresso >= 90 && "Finalizando e otimizando..."}
                   </div>
                 </div>
               </div>
@@ -510,76 +527,27 @@ export default function GeradorPage() {
                   onClick={() => setModalAberto(true)} />
               </div>
             ) : (
-              <div className="relative w-full aspect-[9/16] max-h-[650px] select-none overflow-hidden bg-gradient-to-b from-[#0d1117] via-[#111827] to-[#0d1117]">
-                {/* Ornamentos de canto */}
-                <div className="absolute top-0 left-0 w-20 h-20 border-t-2 border-l-2 border-[#C8A951]/60 rounded-tl-2xl" />
-                <div className="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[#C8A951]/60 rounded-tr-2xl" />
-                <div className="absolute bottom-0 left-0 w-20 h-20 border-b-2 border-l-2 border-[#C8A951]/60 rounded-bl-2xl" />
-                <div className="absolute bottom-0 right-0 w-20 h-20 border-b-2 border-r-2 border-[#C8A951]/60 rounded-br-2xl" />
-
-                {/* Faixa de brilho central */}
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-[#C8A951]/20 to-transparent" />
-
-                {/* Conteúdo centralizado preenchendo o frame */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0 p-8">
-
-                  {/* Emblema superior */}
-                  <div className="relative mb-6">
-                    <div className="w-28 h-28 rounded-full border-[3px] border-[#C8102E] flex items-center justify-center bg-[#C8102E]/10 shadow-lg shadow-[#C8102E]/20">
-                      <div className="w-20 h-20 rounded-full border border-[#C8102E]/40 flex items-center justify-center">
-                        <Sparkles size={36} className="text-[#C8102E]" />
-                      </div>
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-[#C8102E] flex items-center justify-center shadow-md">
-                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
-                    </div>
-                  </div>
-
-                  {/* Eyebrow */}
-                  <p className="text-[#C8A951] text-[10px] font-bold tracking-[0.4em] uppercase mb-3">Gerador de Artes</p>
-
-                  {/* Nome principal */}
-                  <h2 className="text-white text-5xl font-black tracking-widest leading-none drop-shadow-lg">ROGGA</h2>
-                  <h3 className="text-white/70 text-xl font-light tracking-[0.5em] mt-1 mb-5">UNIFORMES</h3>
-
-                  {/* Linha decorativa dourada */}
-                  <div className="flex items-center gap-3 mb-6 w-full max-w-[70%]">
-                    <div className="flex-1 h-px bg-gradient-to-r from-transparent to-[#C8A951]/60" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#C8A951]" />
-                    <div className="flex-1 h-px bg-gradient-to-l from-transparent to-[#C8A951]/60" />
-                  </div>
-
-                  {/* Tagline */}
-                  <p className="text-white/30 text-[11px] tracking-[0.25em] uppercase text-center leading-loose mb-8">
-                    Conforto · Qualidade · Profissionalismo
-                  </p>
-
-                  {/* Card de instrução */}
-                  <div className="w-full max-w-[80%] bg-white/5 border border-white/10 rounded-2xl px-6 py-5 text-center">
-                    <p className="text-white/50 text-xs leading-relaxed">
-                      Preencha o formulário ao lado<br />e clique em{" "}
-                      <span className="text-[#C8102E] font-bold">Gerar Arte</span>
-                      <br />para criar a proposta do cliente
-                    </p>
-                  </div>
-
-                  {/* Versão / badge */}
-                  <p className="absolute bottom-5 text-white/15 text-[9px] tracking-widest uppercase">
-                    roggauniformes.com.br
-                  </p>
+              <div className="w-full aspect-[9/16] max-h-[650px] flex flex-col items-center justify-center bg-gradient-to-b from-[#0d1117] via-[#111827] to-[#0d1117] p-8 text-center">
+                <div className="w-24 h-24 rounded-full border-[3px] border-[#C8102E] flex items-center justify-center bg-[#C8102E]/10 mb-6">
+                  <Sparkles size={32} className="text-[#C8102E]" />
                 </div>
+                <h2 className="text-white text-3xl font-black tracking-widest">ROGGA</h2>
+                <h3 className="text-white/60 text-lg font-light tracking-[0.4em] mt-1 mb-6">UNIFORMES</h3>
+                <p className="text-white/40 text-xs leading-relaxed max-w-[80%]">
+                  Preencha o formulário ao lado e clique em <span className="text-[#C8102E] font-bold">Gerar Arte</span>
+                </p>
               </div>
             )}
 
             <div className="p-4 space-y-3">
               {imagemAtual ? (
                 <>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-white text-sm">{imagemAtual.cliente}</p>
-                      {imagemAtual.vendedor && <p className="text-xs text-gray-500">Vendedor(a): {imagemAtual.vendedor}</p>}
-                    </div>
-                    <button onClick={() => baixarImagem(imagemAtual.url, imagemAtual.cliente)}
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => { setArteParaEditar(imagemAtual); setPrompt(""); setSucesso(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                      className="flex items-center gap-2 border border-white/15 text-gray-200 px-4 py-2 rounded-full text-sm font-semibold hover:border-[#C8102E] hover:text-white transition-colors">
+                      <Wand2 size={14} /> Editar
+                    </button>
+                    <button onClick={() => baixarImagem(imagemAtual)}
                       className="flex items-center gap-2 bg-[#C8102E] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-red-700 transition-colors">
                       <Download size={14} /> Baixar Arte
                     </button>
@@ -587,7 +555,7 @@ export default function GeradorPage() {
                   <button onClick={() => setShowPrompt(!showPrompt)} className="text-xs text-gray-600 hover:text-gray-400 underline">
                     {showPrompt ? "Ocultar" : "Ver"} prompt enviado
                   </button>
-                  {showPrompt && <p className="text-xs text-gray-500 bg-white/5 rounded-lg p-3 leading-relaxed">{imagemAtual.prompt}</p>}
+                  {showPrompt && <p className="text-xs text-gray-500 bg-white/5 rounded-lg p-3 leading-relaxed whitespace-pre-wrap">{imagemAtual.prompt}</p>}
                 </>
               ) : (
                 <p className="text-xs text-gray-600 text-center">
@@ -606,9 +574,8 @@ export default function GeradorPage() {
                     className="relative group rounded-xl overflow-hidden border border-white/8 bg-[#1a1a1f] cursor-pointer hover:border-white/20 transition-colors"
                     onClick={() => setImagemAtual(arte)}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={arte.url} alt={arte.cliente} className="w-full aspect-[9/16] object-cover hover:opacity-80 transition-opacity" />
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 truncate">{arte.cliente}</div>
-                    <button onClick={(e) => { e.stopPropagation(); baixarImagem(arte.url, arte.cliente); }}
+                    <img src={arte.url} alt="arte" className="w-full aspect-[9/16] object-cover hover:opacity-80 transition-opacity" />
+                    <button onClick={(e) => { e.stopPropagation(); baixarImagem(arte); }}
                       className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                       <Download size={12} />
                     </button>
@@ -628,16 +595,16 @@ export default function GeradorPage() {
       {modalAberto && imagemAtual && (
         <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 bg-black/60 border-b border-white/10">
-            <span className="text-white text-sm font-semibold">{imagemAtual.cliente}</span>
+            <span className="text-white text-sm font-semibold">Arte gerada</span>
             <div className="flex items-center gap-2">
-              <button onClick={() => setZoom(z => Math.max(0.3, +(z - 0.25).toFixed(2)))}
+              <button onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.25).toFixed(2)))}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"><ZoomOut size={18} /></button>
               <span className="text-white text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
+              <button onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"><ZoomIn size={18} /></button>
               <button onClick={() => setZoom(1)}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors text-xs">100%</button>
-              <button onClick={() => baixarImagem(imagemAtual.url, imagemAtual.cliente)}
+              <button onClick={() => baixarImagem(imagemAtual)}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#C8102E] hover:bg-red-700 text-white text-xs font-semibold transition-colors">
                 <Download size={14} /> Baixar
               </button>
@@ -653,30 +620,6 @@ export default function GeradorPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function CheckItem({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 cursor-pointer">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-[#C8102E] w-4 h-4" />
-      <span className="text-sm text-gray-400">{label}</span>
-    </label>
-  );
-}
-
-function SelectItem({ label, value, onChange, options }: {
-  label: string; value: string; onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#C8102E] bg-[#0f0f13] text-gray-300">
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
     </div>
   );
 }

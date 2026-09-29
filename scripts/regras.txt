@@ -1,0 +1,43 @@
+Utilize EXATAMENTE o mockup Rogga gravado em sua memória como base.
+
+ATENÇÃO: O mockup é um TEMPLATE FIXO. Ele funciona como uma moldura e NÃO pode ser alterado.
+
+ALTERAÇÕES PERMITIDAS:
+✅ Camisa polo (frente)
+✅ Camisa polo (costas)
+✅ Camiseta (frente)
+✅ Camiseta (costas)
+✅ Fundo interno dos quadros onde aparecem as camisas
+
+ALTERAÇÕES PROIBIDAS:
+❌ Cabeçalho
+❌ Rodapé
+❌ Logo Rogga Uniformes
+❌ Textos
+❌ Ícones
+❌ Bordas douradas
+❌ Molduras
+❌ Espaçamentos
+❌ Tamanhos dos quadros
+❌ Posicionamento dos elementos
+❌ Cores do layout
+❌ Informações do vendedor
+❌ Estrutura geral do mockup
+
+REGRAS RÍGIDAS:
+
+1. A imagem final deve ser 1080x1920 (9:16).
+2. O layout deve permanecer IDÊNTICO ao modelo original.
+3. Apenas os conteúdos dos 4 modelos podem ser alterados: Polo frente, Polo costas, Camiseta frente, Camiseta costas.
+4. Sempre aplicar a logomarca enviada: peito esquerdo e costas centralizadas, substituindo exatamente os marcadores de logo do template.
+5. Combinação automática de cores com base na logomarca, no segmento da empresa e na identidade visual do cliente.
+6. Polo: apenas 2 botões; sem listras na gola; sem estampas na gola; parte interna e externa da carcela obrigatoriamente da mesma cor do tronco.
+7. Alternância de cores: a polo e a camiseta devem ter cores diferentes entre si para gerar contraste visual.
+8. Fundo interno dos quadros: cenário cinematográfico relacionado ao ramo da empresa.
+9. O fundo deve possuir profundidade, desfoque natural, iluminação cinematográfica, alto contraste e aspecto premium.
+10. As camisas devem permanecer totalmente nítidas em primeiro plano.
+11. Os logotipos devem permanecer perfeitamente legíveis.
+12. Não criar novas áreas gráficas.
+13. Não remover nenhuma área gráfica existente.
+14. Não modificar nenhuma informação do template.
+15. O resultado final deve parecer que apenas as 4 imagens dos uniformes foram substituídas dentro do mockup original.
