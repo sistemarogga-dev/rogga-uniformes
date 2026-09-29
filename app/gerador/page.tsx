@@ -454,7 +454,7 @@ export default function GeradorPage() {
         </div>
       )}
       <div
-        className={`rounded-3xl border bg-[#1e1e24] transition-colors ${arrastando ? "border-[#C8102E]" : "border-white/10 focus-within:border-white/25"}`}
+        className={`rounded-3xl border bg-[#1e1e24] transition-colors ${arrastando ? "border-[#2563EB]" : "border-white/10 focus-within:border-white/25"}`}
       >
         {imagens.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">
@@ -522,7 +522,7 @@ export default function GeradorPage() {
         className={`fixed lg:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col bg-[#0c0c0f] border-r border-white/5 transition-transform duration-200 ${lateralAberta ? "translate-x-0" : "-translate-x-full lg:hidden"}`}
       >
         <div className="flex items-center gap-2 px-3 h-14 shrink-0">
-          <Images size={17} className="text-[#C8102E]" />
+          <Images size={17} className="text-[#2563EB]" />
           <span className="flex-1 text-sm font-semibold text-white">Artes geradas</span>
           <span className="text-xs text-gray-500">{artes.length}</span>
           <button onClick={() => importRef.current?.click()} title="Importar artes baixadas"
@@ -548,7 +548,7 @@ export default function GeradorPage() {
                 )}
               </div>
               <button onClick={() => setFiltroDatasAberto((v) => !v)} title="Filtrar por data"
-                className={`p-2 rounded-lg border transition-colors ${dataDe || dataAte ? "border-[#C8102E] text-[#e0435c] bg-[#C8102E]/10" : "border-white/10 text-gray-400 hover:text-white hover:border-white/25"}`}>
+                className={`p-2 rounded-lg border transition-colors ${dataDe || dataAte ? "border-[#2563EB] text-[#60A5FA] bg-[#2563EB]/10" : "border-white/10 text-gray-400 hover:text-white hover:border-white/25"}`}>
                 <CalendarDays size={14} />
               </button>
             </div>
@@ -592,7 +592,7 @@ export default function GeradorPage() {
               <button onClick={() => alternarPasta(pasta.chave)}
                 className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg text-left hover:bg-white/5 transition-colors">
                 <ChevronRight size={13} className={`text-gray-500 transition-transform ${aberta ? "rotate-90" : ""}`} />
-                {aberta ? <FolderOpen size={14} className="text-[#C8102E]" /> : <Folder size={14} className="text-gray-500" />}
+                {aberta ? <FolderOpen size={14} className="text-[#2563EB]" /> : <Folder size={14} className="text-gray-500" />}
                 <span className={`flex-1 text-xs font-semibold ${aberta ? "text-white" : "text-gray-300"}`}>{nomePasta(pasta.chave)}</span>
                 <span className="text-[10px] text-gray-500 bg-white/5 rounded-full px-1.5 py-0.5">{pasta.artes.length}</span>
               </button>
@@ -600,7 +600,7 @@ export default function GeradorPage() {
             <div className="grid grid-cols-2 gap-2 pt-1.5 pb-2">
               {pasta.artes.map((arte) => (
                 <div key={arte.timestamp}
-                  className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#C8102E]/70" : "border-white/10 hover:border-white/25"}`}>
+                  className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#2563EB]/70" : "border-white/10 hover:border-white/25"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={arte.url} alt={arte.logomarca} loading="lazy"
                     onClick={() => { setArteModal(arte); setZoom(1); }}
@@ -644,7 +644,7 @@ export default function GeradorPage() {
         </button>
         <div className="flex-1 min-w-0">
           <span className="font-bold tracking-wide text-white">ROGGA</span>
-          <span className="text-[#C8102E] font-semibold ml-1.5 text-sm">Gerador de Artes</span>
+          <span className="text-[#60A5FA] font-semibold ml-1.5 text-sm">Gerador de Artes</span>
         </div>
         <button onClick={() => setConfigAberta(true)} title="Configurações"
           className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
@@ -692,7 +692,7 @@ export default function GeradorPage() {
                   </div>
                 ) : (
                   <div key={m.id} className="flex gap-3">
-                    <div className="w-8 h-8 shrink-0 rounded-full bg-[#C8102E] flex items-center justify-center text-[11px] font-black text-white">
+                    <div className="w-8 h-8 shrink-0 rounded-full bg-[#2563EB] flex items-center justify-center text-[11px] font-black text-white">
                       R
                     </div>
                     <div className="flex-1 min-w-0 pt-1 space-y-3">
@@ -709,10 +709,10 @@ export default function GeradorPage() {
                       )}
                       {m.status === "gerando" && (
                         <div className="w-full max-w-[300px] aspect-[9/16] rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col items-center justify-center gap-4 p-6">
-                          <Sparkles size={28} className="text-[#C8102E] animate-pulse" />
+                          <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
                           <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">pode levar até 1 minuto</span></p>
                           <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
-                            <div className="h-1.5 rounded-full bg-[#C8102E] transition-all duration-1000 ease-out" style={{ width: `${progresso}%` }} />
+                            <div className="h-1.5 rounded-full bg-[#2563EB] transition-all duration-1000 ease-out" style={{ width: `${progresso}%` }} />
                           </div>
                         </div>
                       )}
@@ -720,14 +720,14 @@ export default function GeradorPage() {
                         <div className="space-y-2">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={m.arte.url} alt="Arte gerada" onClick={() => { setArteModal(m.arte!); setZoom(1); }}
-                            className={`w-full max-w-[300px] rounded-2xl border cursor-zoom-in ${baseArte?.timestamp === m.arte.timestamp ? "border-[#C8102E]/60" : "border-white/10"}`} />
+                            className={`w-full max-w-[300px] rounded-2xl border cursor-zoom-in ${baseArte?.timestamp === m.arte.timestamp ? "border-[#2563EB]/60" : "border-white/10"}`} />
                           <div className="flex flex-wrap items-center gap-1">
                             <button onClick={() => baixarImagem(m.arte!)}
                               className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
                               <Download size={14} /> Baixar
                             </button>
                             {baseArte?.timestamp === m.arte.timestamp ? (
-                              <span className="flex items-center gap-1.5 text-xs text-[#e0435c] px-2.5 py-1.5">
+                              <span className="flex items-center gap-1.5 text-xs text-[#60A5FA] px-2.5 py-1.5">
                                 <Wand2 size={14} /> Em edição
                               </span>
                             ) : (
@@ -786,7 +786,7 @@ export default function GeradorPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {VENDEDORES.map((v) => (
                   <button key={v} onClick={() => setVendedor(v)}
-                    className={`py-2 px-3 rounded-xl border text-sm font-semibold transition-colors ${vendedor === v ? "border-[#C8102E] bg-[#C8102E]/10 text-[#e0435c]" : "border-white/10 text-gray-400 hover:border-white/25"}`}>
+                    className={`py-2 px-3 rounded-xl border text-sm font-semibold transition-colors ${vendedor === v ? "border-[#2563EB] bg-[#2563EB]/10 text-[#60A5FA]" : "border-white/10 text-gray-400 hover:border-white/25"}`}>
                     {v}
                   </button>
                 ))}
@@ -798,8 +798,8 @@ export default function GeradorPage() {
               <div className="grid grid-cols-2 gap-2">
                 {([["rapida", "Rápida", "mais rápida, ótima para aprovar"], ["maxima", "Máxima", "mais detalhe, demora mais"]] as const).map(([v, nome, desc]) => (
                   <button key={v} onClick={() => setQualidade(v)}
-                    className={`py-2 px-3 rounded-xl border text-left transition-colors ${qualidade === v ? "border-[#C8102E] bg-[#C8102E]/10" : "border-white/10 hover:border-white/25"}`}>
-                    <span className={`block text-sm font-semibold ${qualidade === v ? "text-[#e0435c]" : "text-gray-300"}`}>{nome}</span>
+                    className={`py-2 px-3 rounded-xl border text-left transition-colors ${qualidade === v ? "border-[#2563EB] bg-[#2563EB]/10" : "border-white/10 hover:border-white/25"}`}>
+                    <span className={`block text-sm font-semibold ${qualidade === v ? "text-[#60A5FA]" : "text-gray-300"}`}>{nome}</span>
                     <span className="block text-xs text-gray-500">{desc}</span>
                   </button>
                 ))}
@@ -808,7 +808,7 @@ export default function GeradorPage() {
 
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" checked={usarMascara} onChange={(e) => setUsarMascara(e.target.checked)}
-                className="accent-[#C8102E] w-4 h-4 mt-0.5" />
+                className="accent-[#2563EB] w-4 h-4 mt-0.5" />
               <span className="text-sm text-gray-300">
                 Travar tudo, menos os produtos <span className="text-gray-500">(recomendado — protege cabeçalho, etiquetas, rodapé e bordas)</span>
               </span>
@@ -844,7 +844,7 @@ export default function GeradorPage() {
               <Wand2 size={14} /> Editar
             </button>
             <button onClick={() => baixarImagem(arteModal)}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#C8102E] hover:bg-red-700 text-white text-xs font-semibold">
+              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold">
               <Download size={14} /> Baixar
             </button>
             <button onClick={() => setArteModal(null)}
