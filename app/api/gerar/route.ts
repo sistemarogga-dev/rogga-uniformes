@@ -28,6 +28,42 @@ const ZONAS = [
   { x0: 23, y0: 1079, x1: 463, y1: 1396, tab: [328, 298, 1126] }, // BAGA PERSONALIZADA
 ];
 
+/**
+ * Formato EXATO das etiquetas (POLO PIQUET etc.), lido pixel a pixel da arte de
+ * referência: em cada linha da etiqueta, vai da borda esquerda até o último pixel
+ * azul-marinho. Assim a diagonal e o canto arredondado de baixo saem perfeitos, sem
+ * sobrar nenhum pedaço do fundo antigo em volta. Resultado: RGBA 900x1600, alfa 255
+ * dentro das etiquetas. Calculado uma vez por servidor.
+ */
+let etiquetasCache: Promise<Buffer> | null = null;
+function formatoDasEtiquetas(): Promise<Buffer> {
+  etiquetasCache ??= (async () => {
+    const ref = await sharp(path.join(process.cwd(), "public", "template.png"))
+      .resize(REF_W, REF_H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+    const azulMarinho = (x: number, y: number) => {
+      const i = (y * REF_W + x) * 3;
+      const r = ref[i], g = ref[i + 1], b = ref[i + 2];
+      return r < 70 && g < 80 && b < 150 && b > r + 15;
+    };
+    const rgba = Buffer.alloc(REF_W * REF_H * 4);
+    for (const z of ZONAS) {
+      const [xTopo, xBase, yBase] = z.tab;
+      for (let y = z.y0 - 2; y <= yBase + 4; y++) {
+        // Só procura até a diagonal esperada (+ folga): o que for azul além dela é
+        // produto (ex: a gola da polo), não etiqueta.
+        const t = Math.min(1, Math.max(0, (y - z.y0) / (yBase - z.y0)));
+        const limite = Math.round(xTopo + (xBase - xTopo) * t) + 5;
+        let fim = -1;
+        for (let x = z.x0; x <= limite; x++) if (azulMarinho(x, y)) fim = x;
+        if (fim < z.x0 + 20) continue; // linha sem etiqueta (abaixo dela)
+        for (let x = z.x0 - 3; x <= fim; x++) rgba[(y * REF_W + x) * 4 + 3] = 255;
+      }
+    }
+    return sharp(rgba, { raw: { width: REF_W, height: REF_H, channels: 4 } }).png().toBuffer();
+  })();
+  return etiquetasCache;
+}
+
 /** Máscara KEEP (branco = quadros de produto, menos as etiquetas) no tamanho da base. */
 async function mascaraDosQuadros(tW: number, tH: number) {
   const sx = tW / REF_W, sy = tH / REF_H;
@@ -39,19 +75,15 @@ async function mascaraDosQuadros(tW: number, tH: number) {
       return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rad}" ry="${rad}" fill="white"/>`;
     })
     .join("");
-  const tabs = ZONAS
-    .map((z) => {
-      const [xTopo, xBase, yBase] = z.tab;
-      const pts = [[z.x0 - 2, z.y0 - 2], [xTopo - 2, z.y0 - 2], [xBase - 2, yBase], [z.x0 - 2, yBase]]
-        .map(([x, y]) => `${Math.round(x * sx)},${Math.round(y * sy)}`)
-        .join(" ");
-      return `<polygon points="${pts}" fill="white"/>`;
-    })
-    .join("");
-  const svg = (conteudo: string) =>
-    Buffer.from(`<svg width="${tW}" height="${tH}" xmlns="http://www.w3.org/2000/svg">${conteudo}</svg>`);
+  const svg = Buffer.from(`<svg width="${tW}" height="${tH}" xmlns="http://www.w3.org/2000/svg">${keepRects}</svg>`);
+  // Etiquetas no tamanho da base, com a borda levemente suavizada (sem serrilhado)
+  const etiquetas = await sharp(await formatoDasEtiquetas())
+    .resize(tW, tH, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+    .blur(0.6)
+    .png()
+    .toBuffer();
   // dest-out recorta as etiquetas de dentro dos quadros
-  return sharp(svg(keepRects)).composite([{ input: svg(tabs), blend: "dest-out" }]).png().toBuffer();
+  return sharp(svg).composite([{ input: etiquetas, blend: "dest-out" }]).png().toBuffer();
 }
 
 export async function POST(request: Request) {
