@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronRight, Folder, FolderOpen,
+  Search, CalendarDays, ChevronRight, Folder, FolderOpen, Upload,
 } from "lucide-react";
 import { type ArteGerada, listarArtes, salvarArte, excluirArte } from "./historico";
 
@@ -118,6 +118,7 @@ export default function GeradorPage() {
   };
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -353,6 +354,34 @@ export default function GeradorPage() {
     textareaRef.current?.focus();
   };
 
+  // Importa artes baixadas antes (ex: "LEGO - Proposta de Uniformes - Ketelly.webp").
+  // Cada uma vai para a pasta do dia em que o arquivo foi salvo.
+  const importarArtes = async (files: FileList) => {
+    const usados = new Set(artes.map((a) => a.timestamp));
+    const novas: ArteGerada[] = [];
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith("image/")) continue;
+      const nome = f.name.replace(/\.[^.]+$/, "").replace(/\s*\(\d+\)$/, "").trim();
+      const [marca, vend] = nome.split(/\s+-\s+Proposta de Uniformes\s+-\s+/i);
+      let ts = f.lastModified || Date.now();
+      while (usados.has(ts)) ts++; // a chave do histórico é o horário
+      usados.add(ts);
+      const arte: ArteGerada = {
+        url: await lerPreview(f),
+        prompt: `Importada do arquivo "${f.name}".`,
+        logomarca: marca?.trim() || nome,
+        vendedor: vend && vend.trim() !== "Vendedor" ? vend.trim() : "",
+        timestamp: ts,
+      };
+      await salvarArte(arte);
+      novas.push(arte);
+    }
+    if (!novas.length) return;
+    setArtes((prev) => [...novas, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+    setAgora(Date.now());
+    setAviso("");
+  };
+
   const excluirDoHistorico = (arte: ArteGerada) => {
     if (!window.confirm(`Excluir a arte "${arte.logomarca}" do histórico?`)) return;
     setArtes((prev) => prev.filter((a) => a.timestamp !== arte.timestamp));
@@ -496,6 +525,12 @@ export default function GeradorPage() {
           <Images size={17} className="text-[#C8102E]" />
           <span className="flex-1 text-sm font-semibold text-white">Artes geradas</span>
           <span className="text-xs text-gray-500">{artes.length}</span>
+          <button onClick={() => importRef.current?.click()} title="Importar artes baixadas"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+            <Upload size={16} />
+          </button>
+          <input ref={importRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={(e) => { if (e.target.files?.length) importarArtes(e.target.files); e.target.value = ""; }} />
           <button onClick={() => alternarLateral(false)} title="Fechar histórico"
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
             <PanelLeftClose size={17} />
@@ -541,6 +576,10 @@ export default function GeradorPage() {
           {artes.length === 0 ? (
             <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
               As artes que você gerar aparecem aqui e ficam salvas neste navegador.
+              <button onClick={() => importRef.current?.click()}
+                className="mt-3 mx-auto flex items-center gap-1.5 text-gray-400 hover:text-white border border-white/10 rounded-lg px-3 py-1.5">
+                <Upload size={13} /> Importar artes baixadas
+              </button>
             </p>
           ) : pastas.length === 0 ? (
             <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
