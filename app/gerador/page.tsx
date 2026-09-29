@@ -338,7 +338,11 @@ export default function GeradorPage() {
         <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={baseArte.url} alt="" className="w-6 h-10 object-cover rounded border border-white/10" />
-          <span>Próximas alterações serão aplicadas nesta arte. Para começar do zero, peça &quot;uma arte nova&quot;.</span>
+          <span className="flex-1">Próximas alterações serão aplicadas nesta arte. Para começar do zero, peça &quot;uma arte nova&quot;.</span>
+          <button onClick={() => setBaseArte(null)} title="Fechar edição" aria-label="Fechar edição"
+            className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+            <X size={14} />
+          </button>
         </div>
       )}
       <div
