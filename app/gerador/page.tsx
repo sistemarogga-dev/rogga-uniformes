@@ -608,7 +608,7 @@ export default function GeradorPage() {
             }
           }}
           rows={1}
-          placeholder={baseArte ? "Peça uma alteração ou uma arte nova..." : "Descreva a arte, cole um print (Ctrl+V) ou anexe o logo do cliente..."}
+          placeholder={baseArte ? "Peça uma alteração ou uma arte nova..." : "Descreva a arte, cole um print ou anexe o logo"}
           className="w-full bg-transparent px-5 pt-4 pb-2 text-[15px] text-gray-100 placeholder-gray-500 resize-none leading-relaxed focus:outline-none"
         />
         <div className="flex items-center justify-between px-3 pb-3">
