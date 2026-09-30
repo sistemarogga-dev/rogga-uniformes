@@ -26,18 +26,17 @@ propostas de uniformes a partir de uma arte de referência fixa.
 
 | Caminho | O quê |
 |---|---|
-| `app/gerador/page.tsx` | Tela principal (chat, barra lateral com Conversas e Artes) |
+| `app/gerador/page.tsx` | Tela principal (chat, barra lateral de Conversas, seletor Low/Medium) |
 | `app/gerador/componentes/` | Tela de senha, Configurações, Comparar e Tela cheia |
 | `app/gerador/regras.ts` | Textos padrão das regras rígidas e das regras de edição |
 | `app/gerador/utilidades.ts` | Funções auxiliares da tela |
-| `app/gerador/historico.ts` | Tipos e o armazenamento antigo do navegador (só para migração) |
+| `app/gerador/historico.ts` | Tipos e conversas salvas no navegador (IndexedDB) |
 | `app/api/chat` | Conversa e decisão (criar / editar / responder) |
 | `app/api/gerar` | Geração da imagem, máscara dos quadros, medição de cores |
 | `app/api/artes/imagem` | Abre artes antigas que ficaram no histórico da nuvem |
-| `app/api/conversas` | Conversas da equipe (listar, abrir, salvar, renomear, apagar) |
 | `app/api/acesso` | Senha da equipe |
 | `app/api/limpeza` | Limpeza diária (Vercel Cron, `vercel.json`) |
-| `lib/` | Acesso/senha, armazenamento de artes e de conversas |
+| `lib/` | Acesso/senha, leitura e limpeza do histórico antigo |
 
 ## Variáveis de ambiente
 
