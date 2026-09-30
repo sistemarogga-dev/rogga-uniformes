@@ -22,7 +22,6 @@ export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
   const [regrasEdicao, setRegrasEdicao] = useState(REGRAS_EDICAO_PADRAO);
   const [usarMascara, setUsarMascara] = useState(true);
-  const [qualidade, setQualidade] = useState<"rapida" | "maxima">("rapida");
 
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState("");
@@ -246,13 +245,11 @@ export default function GeradorPage() {
     const r = localStorage.getItem("rogga-regras-v2");
     if (r) setRegras(r);
     if (localStorage.getItem("rogga-mascara") === "false") setUsarMascara(false);
-    if (localStorage.getItem("rogga-qualidade") === "maxima") setQualidade("maxima");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => { localStorage.setItem("rogga-regras-v2", regras); }, [regras]);
   useEffect(() => { localStorage.setItem("rogga-regras-edicao-v1", regrasEdicao); }, [regrasEdicao]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
-  useEffect(() => { localStorage.setItem("rogga-qualidade", qualidade); }, [qualidade]);
 
   // Progresso animado enquanto a imagem é gerada
   useEffect(() => {
@@ -417,7 +414,6 @@ export default function GeradorPage() {
       fd.append("regras", regras);
       fd.append("prompt", chat.prompt || conteudo);
       fd.append("usarMascara", String(usarMascara));
-      fd.append("qualidade", qualidade);
       // Se a proposta anexada virou a arte a editar, ela não vai de novo como anexo
       (editandoAnexo ? outrosAnexos : anexosEnviados).forEach((img) => fd.append("imagens", img.file));
       if (editando) {
@@ -487,7 +483,7 @@ export default function GeradorPage() {
       setGerandoImagem(false);
       abortRef.current = null;
     }
-  }, [texto, imagens, ocupado, mensagens, baseArte, regras, regrasEdicao, usarMascara, qualidade]);
+  }, [texto, imagens, ocupado, mensagens, baseArte, regras, regrasEdicao, usarMascara]);
 
   const parar = () => abortRef.current?.abort();
 
@@ -1078,7 +1074,7 @@ export default function GeradorPage() {
                           ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
                               <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
-                              <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">a prévia aparece em instantes</span></p>
+                              <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">leva cerca de 1 minuto</span></p>
                             </div>
                           )}
                           {/* Cronômetro + progresso */}
@@ -1166,7 +1162,6 @@ export default function GeradorPage() {
       {/* ===== CONFIGURAÇÕES ===== */}
       {configAberta && (
         <Configuracoes onFechar={() => setConfigAberta(false)}
-          qualidade={qualidade} setQualidade={setQualidade}
           usarMascara={usarMascara} setUsarMascara={setUsarMascara}
           regras={regras} setRegras={setRegras}
           regrasEdicao={regrasEdicao} setRegrasEdicao={setRegrasEdicao} />

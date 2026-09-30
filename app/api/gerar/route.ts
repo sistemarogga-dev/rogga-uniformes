@@ -11,9 +11,7 @@ export const dynamic = "force-dynamic";
 // A geração de imagem pode passar de 1 minuto em qualidade alta.
 export const maxDuration = 300;
 
-// A resposta é um fluxo NDJSON (uma linha JSON por evento), para o designer ver a arte
-// se formando:
-//   { tipo: "parcial", url }  → prévia (pode vir 0, 1 ou 2 vezes)
+// A resposta é um fluxo NDJSON (uma linha JSON por evento):
 //   { tipo: "final", url, prompt, logomarca, categoria, tempoMs, timestamp, arte }
 //   { tipo: "erro", error }
 
@@ -29,6 +27,57 @@ const ZONAS = [
   { nome: "windbanner", rotulo: "WINDBANNER", x0: 483, y0: 737, x1: 880, y1: 1396, tab: [698, 668, 782] },
   { nome: "bag", rotulo: "BAGA PERSONALIZADA", x0: 23, y0: 1079, x1: 463, y1: 1396, tab: [328, 298, 1126] },
 ];
+
+// ─── ECONOMIA ──────────────────────────────────────────────────────────────────
+// A OpenAI cobra pelos pixels gerados e pelas imagens enviadas. Por isso a IA NÃO
+// gera a arte inteira: cabeçalho e rodapé vêm prontos da referência. Ela gera só um
+// RECORTE — na criação, a área dos 4 quadros; na edição, só os quadros que mudam —
+// e o recorte é colado de volta no lugar. As imagens enviadas também vão reduzidas.
+type Regiao = { x: number; y: number; w: number; h: number }; // coordenadas 900x1600
+const AREA_PRODUTOS: Regiao = { x: 11, y: 240, w: 878, h: 1170 }; // 3:4 → gera 864x1152
+const PIXELS_MIN = 655_360; // menor imagem que o gpt-image-2 aceita
+const MARGEM = 10;
+
+/** Recorte a gerar: a área dos produtos, ou só a volta dos quadros pedidos. */
+function regiaoDosQuadros(quadros: string[]): Regiao {
+  const zs = ZONAS.filter((z) => quadros.includes(z.nome));
+  if (!zs.length || zs.length === ZONAS.length) return AREA_PRODUTOS;
+  const x0 = Math.max(0, Math.min(...zs.map((z) => z.x0)) - MARGEM);
+  const y0 = Math.max(0, Math.min(...zs.map((z) => z.y0)) - MARGEM);
+  const x1 = Math.min(REF_W, Math.max(...zs.map((z) => z.x1)) + MARGEM);
+  const y1 = Math.min(REF_H, Math.max(...zs.map((z) => z.y1)) + MARGEM);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** Tamanho de geração do recorte: mesma proporção, ~1 pixel gerado por pixel da referência. */
+function tamanhoDoRecorte(modelo: string, r: Regiao) {
+  const prop = Math.min(3, Math.max(1 / 3, r.w / r.h));
+  // Os modelos antigos só geram 3 tamanhos fixos (o recorte é esticado e desesticado)
+  if (!modelo.startsWith("gpt-image-2")) {
+    return prop > 1.2 ? { w: 1536, h: 1024 } : prop < 0.83 ? { w: 1024, h: 1536 } : { w: 1024, h: 1024 };
+  }
+  if (r === AREA_PRODUTOS) return { w: 864, h: 1152 };
+  const px = Math.max(PIXELS_MIN, r.w * r.h);
+  const w = Math.ceil(Math.sqrt(px * prop) / 16) * 16;
+  let h = Math.ceil(w / prop / 16) * 16;
+  while (w * h < PIXELS_MIN) h += 16;
+  return { w, h };
+}
+
+/** Recorta a região de uma imagem (de qualquer tamanho) e reduz para caber em "max" px. */
+async function recortar(img: Buffer, r: Regiao, max: number) {
+  const m = await sharp(img).metadata();
+  const sx = (m.width ?? REF_W) / REF_W, sy = (m.height ?? REF_H) / REF_H;
+  return sharp(img)
+    .extract({ left: Math.round(r.x * sx), top: Math.round(r.y * sy), width: Math.round(r.w * sx), height: Math.round(r.h * sy) })
+    .resize(max, max, { fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+}
+
+/** Reduz uma imagem enviada (logo, anexo) para no máximo "max" px no lado maior. */
+const reduzir = (img: Buffer, max: number) =>
+  sharp(img).resize(max, max, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
 
 // Pontos do corpo de cada produto (coordenadas da referência 900x1600, longe das logos)
 // onde a cor é medida na arte atual antes de uma edição.
@@ -134,8 +183,8 @@ export async function POST(request: Request) {
   const regras = (formData.get("regras") as string) || "";
   const promptUser = (formData.get("prompt") as string) || "";
   const usarMascara = (formData.get("usarMascara") as string) !== "false";
-  // "rapida" (quality medium, padrão) ou "maxima" (quality high)
-  const qualidade = (formData.get("qualidade") as string) === "maxima" ? "high" : "medium";
+  // Qualidade fixa em "medium": a "high" custava ~4x mais por arte
+  const qualidade = "medium";
   const vendedor = ((formData.get("vendedor") as string) || "").slice(0, 40);
   const imagens = formData.getAll("imagens") as File[];
   // Edição: a arte-base vem do histórico (basePath) ou como data URL (baseImage).
@@ -174,10 +223,15 @@ export async function POST(request: Request) {
   }
   const base = fs.readFileSync(templatePath);
 
+  const quadrosDaRegiao = (editando && quadrosPedidos.length ? quadrosPedidos : ZONAS.map((z) => z.nome));
+  const regiao = regiaoDosQuadros(quadrosDaRegiao);
+  const nomesRecorte = ZONAS.filter((z) => quadrosDaRegiao.includes(z.nome)).map((z) => z.rotulo).join(", ");
+  const notaRecorte = `
+IMPORTANTE — RECORTE: as imagens da arte (referência${editando ? " e arte atual" : ""}) mostram SÓ um recorte da proposta: ${regiao === AREA_PRODUTOS ? "a área dos quatro quadros de produto" : `o(s) quadro(s) ${nomesRecorte}`}, sem o cabeçalho e o rodapé (eles são aplicados depois, automaticamente). Gere a imagem exatamente com este mesmo enquadramento do recorte — mesmas bordas, quadros e etiquetas nas mesmas posições. Não acrescente cabeçalho, título nem rodapé.`;
   const regraEnquadramento = `- Cada produto fica INTEIRO dentro do seu quadro, com folga das bordas, exatamente na posição e no tamanho da arte de referência: nada cortado pelas bordas dos quadros, sem aproximar (zoom) e sem um produto sobrepor o outro.`;
 
   // Edição: só os quadros pedidos mudam; os outros vêm da arte atual pixel a pixel
-  const quadros = editando && quadrosPedidos.length ? quadrosPedidos : ZONAS.map((z) => z.nome);
+  const quadros = quadrosDaRegiao;
   const anterior = basePath ? Number(basePath.match(/^artes\/(\d+)__/)?.[1]) || undefined : undefined;
   const logosOriginais = editando
     ? (await Promise.all(logosAnteriores.map((id) => bufferDoLogo(id).catch(() => null)))).filter((b): b is Buffer => !!b)
@@ -188,15 +242,15 @@ export async function POST(request: Request) {
   const notaFresca = editando
     ? `
 INFORMAÇÕES DESTA EDIÇÃO (automáticas):
-- 1ª imagem: arte de referência da Rogga — serve SÓ como molde de posições, tamanhos e enquadramentos dos produtos. NÃO copie dela cores, logos, textos nem fundos.
-- 2ª imagem: a ARTE ATUAL deste cliente — é dela que vêm as cores, as logos, os textos e os FUNDOS (imagens de contexto) de cada quadro. Mantenha tudo idêntico a ela, inclusive o fundo, a menos que o pedido mande trocar.${logosOriginais.length ? ` Imagens 3 em diante: os arquivos ORIGINAIS da logomarca do cliente — copie a logo exatamente destes arquivos, sem redesenhar, simplificar ou trocar nada.` : ""}
+- 1ª imagem: recorte da arte de referência da Rogga — serve SÓ como molde de posições, tamanhos e enquadramentos dos produtos. NÃO copie dela cores, logos, textos nem fundos.
+- 2ª imagem: o mesmo recorte da ARTE ATUAL deste cliente — é dela que vêm as cores, as logos, os textos e os FUNDOS (imagens de contexto) de cada quadro. Mantenha tudo idêntico a ela, inclusive o fundo, a menos que o pedido mande trocar.${logosOriginais.length ? ` Imagens 3 em diante: os arquivos ORIGINAIS da logomarca do cliente — copie a logo exatamente destes arquivos, sem redesenhar, simplificar ou trocar nada.` : ""}
 ${cores ? `- Cores medidas na arte atual (mantenha exatamente, a menos que o pedido mude a cor): ${cores}.\n` : ""}- Quadros que podem mudar nesta edição: ${ZONAS.filter((z) => quadros.includes(z.nome)).map((z) => z.rotulo).join(", ")}. Nos demais quadros não mude nada.
 ${regraEnquadramento}`
     : `
 ${regraEnquadramento}`;
   const notaNova = editando ? "" : `
 GEOMETRIA OBRIGATÓRIA (NÃO DESLOCAR NADA):
-- A primeira imagem é a ARTE DE REFERÊNCIA da Rogga. O resultado deve ser IDÊNTICO a ela em layout: cabeçalho, título, subtítulo, bordas douradas, etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) e rodapé permanecem exatamente iguais.
+- A primeira imagem é o recorte da ARTE DE REFERÊNCIA da Rogga. O resultado deve ser IDÊNTICO a ela em layout: bordas douradas e etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) permanecem exatamente iguais.
 - Os QUATRO quadros de produto têm posição e tamanho FIXOS: POLO PIQUET (quadro largo no topo), CAMISETA (meio à esquerda), BAGA PERSONALIZADA (embaixo à esquerda) e WINDBANNER (quadro alto à direita). Pinte SOMENTE dentro deles, sem ultrapassar as bordas.
 
 O QUE MUDA (E SOMENTE ISSO):
@@ -215,6 +269,7 @@ O QUE MUDA (E SOMENTE ISSO):
     promptUser.trim(),
     notaNova,
     notaFresca,
+    notaRecorte,
   ].filter(Boolean).join("\n").trim();
 
   // Camada de baixo da composição: na criação, a referência; na edição, a ARTE ATUAL
@@ -228,7 +283,12 @@ O QUE MUDA (E SOMENTE ISSO):
   // Recola SÓ os quadros de produto da arte gerada sobre a base. Assim cabeçalho,
   // etiquetas, bordas e rodapé ficam pixel-perfeito iguais ao original.
   const compor = async (gerado: Buffer, saida: { w: number; h: number; q: number }) => {
-    const cheio = await sharp(gerado).resize(tW, tH, { fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+    const sx = tW / REF_W, sy = tH / REF_H;
+    const left = Math.round(regiao.x * sx), top = Math.round(regiao.y * sy);
+    const recorte = await sharp(gerado)
+      .resize(Math.min(tW - left, Math.round(regiao.w * sx)), Math.min(tH - top, Math.round(regiao.h * sy)), { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .png().toBuffer();
+    const cheio = await sharp(camadaBase).composite([{ input: recorte, left, top }]).png().toBuffer();
     let composto = cheio;
     if (keepPng) {
       const overlay = await sharp(cheio).ensureAlpha().composite([{ input: keepPng, blend: "dest-in" }]).png().toBuffer();
@@ -240,13 +300,7 @@ O QUE MUDA (E SOMENTE ISSO):
       .toBuffer();
   };
 
-  // ─── TAMANHO DE GERAÇÃO ─────────────────────────────────────────────────────
-  // gpt-image-2 aceita tamanho livre: geramos direto em 9:16 (1008x1792, múltiplos de
-  // 16), sem distorcer o template. Os modelos antigos só geram 2:3 (1024x1536): nesse
-  // caso o template é ESTICADO para 2:3 e a saída é desesticada de volta.
   const MODELO = process.env.IMAGE_MODEL || "gpt-image-2";
-  const tamanhoDe = (modelo: string) =>
-    modelo.startsWith("gpt-image-2") ? { w: 1008, h: 1792 } : { w: 1024, h: 1536 };
 
   // ─── IMAGENS DO USUÁRIO ─────────────────────────────────────────────────────
   const anexos: Array<{ buffer: Buffer; type: string }> = [];
@@ -293,25 +347,25 @@ O QUE MUDA (E SOMENTE ISSO):
     return r;
   };
 
-  // ─── EDIT ──────────────────────────────────────────────────────────────────
-  // Edição LIMPA (sem máscara): o modelo redesenha os produtos de forma holística e
-  // fiel (como no ChatGPT). A preservação do layout é feita depois, em compor().
-  // Em modo stream a OpenAI manda prévias (partial_images) antes da imagem final.
-  const gerarImagem = async (modelo: string, stream: boolean, onParcial: (b: Buffer) => void) => {
-    const { w, h } = tamanhoDe(modelo);
-    // Referência e arte atual vão em JPEG de alta qualidade (~0,5 MB cada, em vez de
-    // 2–4 MB em PNG): envio mais rápido para a OpenAI, sem perda visível.
-    const paraEnvio = (img: Buffer) =>
-      sharp(img).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
-    // Ordem: 1ª referência (molde do layout), 2ª arte atual (só na edição), depois anexos
-    const [baseRedim, atualRedim] = await Promise.all([paraEnvio(base), arteAtual ? paraEnvio(arteAtual) : null]);
+  // ─── GERAÇÃO ────────────────────────────────────────────────────────────────
+  // Sem prévias (partial_images): cada prévia também era cobrada.
+  const gerarImagem = async (modelo: string) => {
+    const { w, h } = tamanhoDoRecorte(modelo, regiao);
+    // Ordem: 1ª recorte da referência (só molde do layout, vai pequeno), 2ª recorte da
+    // arte atual (só na edição), logos originais e anexos — tudo reduzido.
+    const [refRecorte, atualRecorte, logosRed, anexosRed] = await Promise.all([
+      recortar(base, regiao, 768),
+      arteAtual ? recortar(arteAtual, regiao, 1024) : null,
+      Promise.all(logosOriginais.map((b) => reduzir(b, 512))),
+      Promise.all(anexos.map((a) => reduzir(a.buffer, 1024))),
+    ]);
     const files = await Promise.all([
-      toFile(baseRedim, "template.jpg", { type: "image/jpeg" }),
-      ...(atualRedim ? [toFile(atualRedim, "arte-atual.jpg", { type: "image/jpeg" })] : []),
-      ...logosOriginais.map((b, i) => toFile(b, `logo-original-${i + 1}.png`, { type: "image/png" })),
-      ...anexos.map((a, i) => toFile(a.buffer, `imagem-${i + 1}.png`, { type: a.type })),
+      toFile(refRecorte, "referencia.jpg", { type: "image/jpeg" }),
+      ...(atualRecorte ? [toFile(atualRecorte, "arte-atual.jpg", { type: "image/jpeg" })] : []),
+      ...logosRed.map((b, i) => toFile(b, `logo-original-${i + 1}.png`, { type: "image/png" })),
+      ...anexosRed.map((b, i) => toFile(b, `imagem-${i + 1}.png`, { type: "image/png" })),
     ].slice(0, 16));
-    const params = {
+    const r = await openai.images.edit({
       model: modelo,
       image: files.length === 1 ? files[0] : files,
       prompt: editPrompt,
@@ -322,40 +376,23 @@ O QUE MUDA (E SOMENTE ISSO):
       ...(modelo.startsWith("gpt-image-2") ? {} : { input_fidelity: "high" }),
       output_format: "jpeg",
       output_compression: 95,
-      ...(stream ? { stream: true, partial_images: 2 } : {}),
-    };
-    if (stream) {
-      const eventos = await openai.images.edit(params as OpenAI.Images.ImageEditParamsStreaming);
-      for await (const ev of eventos) {
-        if (ev.type === "image_edit.partial_image") onParcial(Buffer.from(ev.b64_json, "base64"));
-        else if (ev.type === "image_edit.completed") return Buffer.from(ev.b64_json, "base64");
-      }
-      throw new Error("Falha ao gerar imagem.");
-    }
-    const r = await openai.images.edit(params as OpenAI.Images.ImageEditParamsNonStreaming);
+    } as OpenAI.Images.ImageEditParamsNonStreaming);
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("Falha ao gerar imagem.");
-    return Buffer.from(b64, "base64");
+    console.log(`[gerar] ${modelo} ${w}x${h} uso:`, JSON.stringify(r.usage ?? {}));
+    return { buffer: Buffer.from(b64, "base64"), uso: r.usage, tamanho: `${w}x${h}` };
   };
 
-  // Tentativas em ordem: modelo novo com prévia → sem prévia → gpt-image-1.5.
-  // Só troca de tentativa em erro de "não suportado" (400/403/404) e antes de qualquer prévia.
-  const gerarComFallback = async (onParcial: (b: Buffer) => void) => {
-    const tentativas: Array<[string, boolean]> = [[MODELO, true], [MODELO, false]];
-    if (MODELO !== "gpt-image-1.5") tentativas.push(["gpt-image-1.5", true], ["gpt-image-1.5", false]);
-    let houvePrevia = false;
-    let ultimoErro: unknown;
-    for (const [modelo, stream] of tentativas) {
-      try {
-        return await gerarImagem(modelo, stream, (b) => { houvePrevia = true; onParcial(b); });
-      } catch (e) {
-        ultimoErro = e;
-        const status = (e as { status?: number }).status;
-        if (houvePrevia || !(status === 400 || status === 403 || status === 404)) throw e;
-        console.warn(`[gerar] ${modelo} (stream=${stream}) falhou (${status}):`, (e as Error).message);
-      }
+  // Se o modelo principal não estiver disponível (400/403/404), tenta o gpt-image-1.5
+  const gerarComFallback = async () => {
+    try {
+      return await gerarImagem(MODELO);
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (MODELO === "gpt-image-1.5" || !(status === 400 || status === 403 || status === 404)) throw e;
+      console.warn(`[gerar] ${MODELO} falhou (${status}):`, (e as Error).message);
+      return gerarImagem("gpt-image-1.5");
     }
-    throw ultimoErro;
   };
 
   const enc = new TextEncoder();
@@ -363,17 +400,8 @@ O QUE MUDA (E SOMENTE ISSO):
     async start(ctrl) {
       const enviar = (obj: object) => ctrl.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
       try {
-        // Prévias em ordem, sem travar a geração
-        let filaPrevia = Promise.resolve();
-        const onParcial = (b: Buffer) => {
-          filaPrevia = filaPrevia.then(async () => {
-            const jpg = await compor(b, { w: 540, h: 960, q: 70 });
-            enviar({ tipo: "parcial", url: `data:image/jpeg;base64,${jpg.toString("base64")}` });
-          }).catch(() => {});
-        };
-
-        const [imageBuffer, analise] = await Promise.all([gerarComFallback(onParcial), analisarLogo()]);
-        await filaPrevia;
+        const [gerada, analise] = await Promise.all([gerarComFallback(), analisarLogo()]);
+        const imageBuffer = gerada.buffer;
 
         // Redimensiona para 1080x1920 (9:16). JPEG de alta qualidade para caber no
         // limite de ~4,5 MB por resposta da Vercel (um PNG passaria disso).
@@ -406,6 +434,7 @@ O QUE MUDA (E SOMENTE ISSO):
           arte,
           logos,
           anterior,
+          uso: gerada.uso ? { ...gerada.uso, tamanho: gerada.tamanho } : undefined,
         });
       } catch (err: unknown) {
         enviar({ tipo: "erro", error: err instanceof Error ? err.message : "Erro desconhecido." });

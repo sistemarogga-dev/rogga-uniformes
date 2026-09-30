@@ -12,8 +12,10 @@ propostas de uniformes a partir de uma arte de referência fixa.
 2. `/api/chat` (gpt-4.1-mini) conversa e decide: responder, **criar** uma arte nova ou
    **editar** uma arte existente (e quais quadros a edição afeta).
 3. `/api/gerar` gera a imagem com `gpt-image-2` (cai para `gpt-image-1.5` se precisar),
-   com prévias em tempo real, e recola só os quadros de produto sobre a arte de
-   referência (`public/template.png`). Cabeçalho, etiquetas, bordas e rodapé nunca mudam.
+   em qualidade `medium` e sem prévias (economia). A IA gera só um **recorte** — a área
+   dos quadros (864x1152) na criação, ou só os quadros citados na edição — e ele é recolado
+   sobre a arte de referência (`public/template.png`). Cabeçalho, etiquetas, bordas e
+   rodapé nunca mudam. O consumo de tokens de cada geração aparece no log (`[gerar] ... uso:`).
    - **Criação:** usa as regras rígidas (Configurações).
    - **Edição:** usa as regras de edição (Configurações) + cores medidas na arte atual,
      reenvia o logo original e só refaz os quadros citados; os outros saem pixel a pixel.

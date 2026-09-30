@@ -1,16 +1,12 @@
 import { RotateCcw, X } from "lucide-react";
 import { REGRAS_EDICAO_PADRAO, REGRAS_PADRAO } from "../regras";
 
-type Qualidade = "rapida" | "maxima";
-
-// Janela de Configurações: qualidade, trava do layout e as regras enviadas à IA.
+// Janela de Configurações: trava do layout e as regras enviadas à IA.
 // Tudo fica salvo no navegador (a página cuida disso).
 export default function Configuracoes({
-  onFechar, qualidade, setQualidade, usarMascara, setUsarMascara, regras, setRegras, regrasEdicao, setRegrasEdicao,
+  onFechar, usarMascara, setUsarMascara, regras, setRegras, regrasEdicao, setRegrasEdicao,
 }: {
   onFechar: () => void;
-  qualidade: Qualidade;
-  setQualidade: (q: Qualidade) => void;
   usarMascara: boolean;
   setUsarMascara: (v: boolean) => void;
   regras: string;
@@ -30,19 +26,6 @@ export default function Configuracoes({
           <button onClick={onFechar} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10">
             <X size={18} />
           </button>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-300 mb-2">Qualidade da imagem</label>
-          <div className="grid grid-cols-2 gap-2">
-            {([["rapida", "Rápida", "mais rápida, ótima para aprovar"], ["maxima", "Máxima", "mais detalhe, demora mais"]] as const).map(([v, nome, desc]) => (
-              <button key={v} onClick={() => setQualidade(v)}
-                className={`py-2 px-3 rounded-xl border text-left transition-colors ${qualidade === v ? "border-[#2563EB] bg-[#2563EB]/10" : "border-white/10 hover:border-white/25"}`}>
-                <span className={`block text-sm font-semibold ${qualidade === v ? "text-[#60A5FA]" : "text-gray-300"}`}>{nome}</span>
-                <span className="block text-xs text-gray-500">{desc}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
         <label className="flex items-start gap-2 cursor-pointer">
