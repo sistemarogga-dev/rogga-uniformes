@@ -250,17 +250,27 @@ O QUE MUDA (E SOMENTE ISSO):
 
   // Detectar nome da marca e categoria/ramo pelo primeiro logo (roda em paralelo
   // com a geração da imagem, para não somar tempo).
+  // Na edição, o nome vem da arte editada; se ela veio anexada (sem nome conhecido),
+  // o nome é lido na própria proposta — não no primeiro anexo, que pode ser outro logo.
   const analisarLogo = async () => {
     const r = { logomarca: "Logomarca", categoria: "Outros" };
-    if (!anexos.length) return r;
+    const lerDaProposta = editando && !logomarcaBase && !!arteAtual;
+    if (editando && !lerDaProposta) return r;
+    if (!lerDaProposta && !anexos.length) return r;
+    const imagem = lerDaProposta
+      ? `data:image/jpeg;base64,${(await sharp(arteAtual!).resize(540, 960).jpeg({ quality: 80 }).toBuffer()).toString("base64")}`
+      : `data:${anexos[0].type};base64,${anexos[0].buffer.toString("base64")}`;
+    const pergunta = lerDaProposta
+      ? "Esta é uma proposta de uniformes. Olhe a logomarca aplicada nos uniformes (não o cabeçalho \"ROGGA Uniformes\")."
+      : "Analise este logotipo.";
     try {
       const vision = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
         messages: [{
           role: "user",
           content: [
-            { type: "image_url", image_url: { url: `data:${anexos[0].type};base64,${anexos[0].buffer.toString("base64")}` } },
-            { type: "text", text: 'Analise este logotipo. Responda APENAS com um JSON no formato {"nome":"...","categoria":"..."}. "nome" = nome da marca/empresa (se ilegível, use "Cliente"). "categoria" = ramo/segmento em 1-2 palavras em português (ex: Climatização, Construção, Restaurante, Oficina, Clínica, Academia, Transporte, Tecnologia, Comércio). Nada além do JSON.' },
+            { type: "image_url", image_url: { url: imagem } },
+            { type: "text", text: pergunta + ' Responda APENAS com um JSON no formato {"nome":"...","categoria":"..."}. "nome" = nome da marca/empresa (se ilegível, use "Cliente"). "categoria" = ramo/segmento em 1-2 palavras em português (ex: Climatização, Construção, Restaurante, Oficina, Clínica, Academia, Transporte, Tecnologia, Comércio). Nada além do JSON.' },
           ],
         }],
         max_tokens: 60,
@@ -360,7 +370,7 @@ O QUE MUDA (E SOMENTE ISSO):
         // Redimensiona para 1080x1920 (9:16). JPEG de alta qualidade para caber no
         // limite de ~4,5 MB por resposta da Vercel (um PNG passaria disso).
         const finalImg = await compor(imageBuffer, { w: 1080, h: 1920, q: 94 });
-        const logomarca = anexos.length ? analise.logomarca : (logomarcaBase || analise.logomarca);
+        const logomarca = editando ? (logomarcaBase || analise.logomarca) : anexos.length ? analise.logomarca : (logomarcaBase || analise.logomarca);
         const timestamp = Date.now();
 
         // Guarda os anexos originais (logos) para as próximas edições desta arte

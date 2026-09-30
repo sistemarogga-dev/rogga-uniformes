@@ -22,6 +22,7 @@ Você tem duas ferramentas:
 Quando usar:
 - O usuário pede uma arte/proposta/mockup (mesmo de forma vaga, ou só manda um logo pedindo para fazer) → gerar_arte. Não faça perguntas desnecessárias: se faltar detalhe, escolha cores automaticamente pela logomarca e pelo ramo.
 - Já existe arte e o usuário pede uma mudança ("deixa a polo azul", "troca o fundo", "logo maior") → editar_arte.
+- O usuário ANEXOU UMA PROPOSTA PRONTA da Rogga (o sistema avisa) e pede para refazer/ajustar/mudar algo nela ("refaça a arte do anexo", "somente na camiseta...", "acrescentar o instagram", "não mude a polo") → editar_arte. Essa proposta anexada é a arte a editar.
 - Se ele pedir claramente uma arte do zero mesmo já existindo uma → gerar_arte.
 - Dúvidas, conversa, ideias de cores/estampas, pedidos de sugestão → responda em texto, sem ferramenta.
 
@@ -77,10 +78,11 @@ export async function POST(request: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
-    const { mensagens, temArte, anexos } = (await request.json()) as {
+    const { mensagens, temArte, anexos, propostaAnexada } = (await request.json()) as {
       mensagens: MensagemChat[];
       temArte: boolean;
       anexos: number;
+      propostaAnexada?: boolean;
     };
 
     if (!Array.isArray(mensagens) || mensagens.length === 0) {
@@ -88,7 +90,9 @@ export async function POST(request: Request) {
     }
 
     const contexto = [
-      temArte ? "Já existe uma arte na conversa (pode ser editada)." : "Ainda não existe nenhuma arte na conversa.",
+      propostaAnexada
+        ? "O usuário ANEXOU nesta mensagem uma PROPOSTA PRONTA da Rogga: é a arte a ser editada (use editar_arte para qualquer mudança nela)."
+        : temArte ? "Já existe uma arte na conversa (pode ser editada)." : "Ainda não existe nenhuma arte na conversa.",
       anexos > 0
         ? `O usuário anexou ${anexos} imagem(ns) nesta mensagem (logos/estampas/referências) — elas serão enviadas junto para a geração.`
         : "Nenhuma imagem anexada nesta mensagem.",

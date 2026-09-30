@@ -16,7 +16,7 @@ import TelaSenha from "./componentes/TelaSenha";
 import Configuracoes from "./componentes/Configuracoes";
 import Comparacao from "./componentes/Comparacao";
 import TelaCheia from "./componentes/TelaCheia";
-import { type ImagemEnviada, mensagensLeves, segundos, novoId, lerPreview } from "./utilidades";
+import { type ImagemEnviada, mensagensLeves, segundos, novoId, lerPreview, ehPropostaRogga } from "./utilidades";
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
@@ -395,6 +395,15 @@ export default function GeradorPage() {
     abortRef.current = controller;
 
     try {
+      // 0) Proposta da Rogga anexada? (o designer baixou a arte e anexou de volta pedindo
+      //    mudanças). Ela vira a arte a EDITAR — com todas as proteções da edição —
+      //    em vez de ser tratada como um logo e gerar tudo do zero.
+      let propostaAnexada: ImagemEnviada | null = null;
+      for (const img of anexosEnviados) {
+        if (await ehPropostaRogga(img.preview)) { propostaAnexada = img; break; }
+      }
+      const outrosAnexos = anexosEnviados.filter((img) => img !== propostaAnexada);
+
       // 1) Conversa: o assistente responde ou decide gerar/editar
       let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean; quadros?: string[] };
       {
@@ -407,8 +416,9 @@ export default function GeradorPage() {
               papel: m.papel,
               texto: m.arte ? `${m.texto}\n[arte gerada e exibida ao usuário]` : m.texto,
             })),
-            temArte: !!baseArte,
-            anexos: anexosEnviados.length,
+            temArte: !!baseArte || !!propostaAnexada,
+            anexos: outrosAnexos.length,
+            propostaAnexada: !!propostaAnexada,
           }),
         });
         chat = await resChat.json();
@@ -422,7 +432,11 @@ export default function GeradorPage() {
       }
 
       // 2) Geração da arte
-      const editando = chat.modo === "editar" ? baseArte : null;
+      // A proposta anexada tem prioridade: é a arte que o designer quer mudar agora
+      const editandoAnexo = chat.modo === "editar" && propostaAnexada;
+      const editando: ArteGerada | null = editandoAnexo
+        ? { url: propostaAnexada!.preview, prompt: "", logomarca: "", vendedor: "", timestamp: Date.now() }
+        : chat.modo === "editar" ? baseArte : null;
       atualizarMsg(respId, { texto: chat.texto || "", status: "gerando" });
       setGerandoImagem(true);
 
@@ -431,7 +445,8 @@ export default function GeradorPage() {
       fd.append("prompt", chat.prompt || conteudo);
       fd.append("usarMascara", String(usarMascara));
       fd.append("qualidade", qualidade);
-      anexosEnviados.forEach((img) => fd.append("imagens", img.file));
+      // Se a proposta anexada virou a arte a editar, ela não vai de novo como anexo
+      (editandoAnexo ? outrosAnexos : anexosEnviados).forEach((img) => fd.append("imagens", img.file));
       if (editando) {
         // Arte do histórico vai pelo caminho (leve); arte só local vai como imagem
         if (editando.caminho) fd.append("basePath", editando.caminho);
