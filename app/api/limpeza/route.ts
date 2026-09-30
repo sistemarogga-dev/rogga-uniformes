@@ -1,10 +1,9 @@
-import { limparArtesAntigas } from "@/lib/artes";
-import { limparConversasAntigas } from "@/lib/conversas";
+import { limparAntigos } from "@/lib/limpeza";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Por quantos dias as artes e as conversas ficam guardadas
+// Por quantos dias as artes ficam guardadas (e as conversas antigas que ficaram na nuvem)
 const DIAS_GUARDADOS = 7;
 
 // Limpeza diária, chamada pelo Cron da Vercel (vercel.json). A Vercel envia
@@ -15,12 +14,9 @@ export async function GET(request: Request) {
     return Response.json({ error: "Não autorizado." }, { status: 401 });
   }
   try {
-    const [artes, conversas] = await Promise.all([
-      limparArtesAntigas(DIAS_GUARDADOS),
-      limparConversasAntigas(DIAS_GUARDADOS),
-    ]);
-    console.log("[limpeza]", JSON.stringify({ ...artes, conversas }));
-    return Response.json({ ok: true, apagados: { ...artes, conversas } });
+    const apagados = await limparAntigos(DIAS_GUARDADOS);
+    console.log("[limpeza]", JSON.stringify(apagados));
+    return Response.json({ ok: true, apagados });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 500 });
   }

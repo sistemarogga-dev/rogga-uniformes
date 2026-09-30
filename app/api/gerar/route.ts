@@ -157,8 +157,16 @@ export async function POST(request: Request) {
   // edição a IA "aproximava" um pouco os produtos — eles cresciam, encostavam nas
   // bordas dos quadros e começavam a se sobrepor.
   let arteAtual: Buffer | null = null;
-  if (basePath && caminhoValido(basePath)) arteAtual = await bufferDaArte(basePath).catch(() => null);
-  else if (baseImage?.startsWith("data:")) arteAtual = Buffer.from(baseImage.split(",")[1], "base64");
+  if (baseImage?.startsWith("data:")) arteAtual = Buffer.from(baseImage.split(",")[1], "base64");
+  else if (basePath && caminhoValido(basePath)) {
+    arteAtual = await bufferDaArte(basePath).catch(() => null);
+    // Nunca transformar uma edição em arte nova sem avisar (era o que "alucinava")
+    if (!arteAtual) {
+      return Response.json({
+        error: "Não consegui abrir a arte para editar (o armazenamento do histórico está indisponível). Baixe a arte e anexe-a na mensagem para editar.",
+      }, { status: 503 });
+    }
+  }
   const editando = !!arteAtual;
   const templatePath = path.join(process.cwd(), "public", "template.png");
   if (!fs.existsSync(templatePath)) {

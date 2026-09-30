@@ -9,7 +9,7 @@ import {
 import {
   type ArteGerada, type Mensagem, type Conversa,
   listarArtes as listarArtesLocais, excluirArte as excluirArteLocal,
-  listarConversas, excluirConversa,
+  listarConversas, salvarConversa, excluirConversa,
 } from "./historico";
 import { REGRAS_PADRAO, REGRAS_EDICAO_PADRAO } from "./regras";
 import TelaSenha from "./componentes/TelaSenha";
@@ -88,42 +88,17 @@ export default function GeradorPage() {
   // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
   const [agora, setAgora] = useState(() => Date.now());
 
-  // ─── Conversas (lateral, aba "Conversas") — da equipe, salvas na nuvem ─────────
+  // ─── Conversas (lateral, aba "Conversas") — salvas NESTE navegador ──────────────
+  // Ficam no IndexedDB de cada designer (não gastam operações do Vercel Blob). As artes
+  // continuam na nuvem, visíveis para a equipe; a conversa guarda só o endereço delas.
   const [abaLateral, setAbaLateral] = useState<"conversas" | "artes">("conversas");
-  const [conversas, setConversas] = useState<Conversa[]>([]); // só o resumo (sem mensagens)
+  const [conversas, setConversas] = useState<Conversa[]>([]);
   const [conversaId, setConversaId] = useState<string | null>(null);
   const conversaIdRef = useRef<string | null>(null); // id síncrono (usado dentro do enviar)
   const salvoRef = useRef(""); // assinatura do que já foi salvo (evita salvar à toa)
-  const [abrindoConversa, setAbrindoConversa] = useState<string | null>(null);
-  // Salvamentos em fila: um não atropela o outro (ex: renomear logo após criar)
-  const filaSalvar = useRef<Promise<unknown>>(Promise.resolve());
-  const naFila = (tarefa: () => Promise<unknown>) => {
-    filaSalvar.current = filaSalvar.current.then(tarefa).catch(() => {});
-    return filaSalvar.current;
-  };
 
   const carregarConversas = useCallback(async () => {
-    try {
-      const r = await fetch("/api/conversas");
-      if (!r.ok) return;
-      setConversas((await r.json()).conversas || []);
-
-      // Migração única: conversas que estavam só neste navegador sobem para a nuvem
-      const locais = await listarConversas();
-      if (!locais.length) return;
-      for (const c of locais) {
-        const up = await fetch("/api/conversas", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: c.id, titulo: c.titulo, mensagens: await mensagensLeves(c.mensagens || []) }),
-        });
-        if (up.ok) await excluirConversa(c.id);
-      }
-      const r2 = await fetch("/api/conversas");
-      if (r2.ok) setConversas((await r2.json()).conversas || []);
-    } catch {
-      // sem lista agora; o gerador continua funcionando
-    }
+    setConversas(await listarConversas());
   }, []);
 
   useEffect(() => {
@@ -164,16 +139,9 @@ export default function GeradorPage() {
     const titulo = antiga?.titulo
       || estaveis.find((m) => m.papel === "user")?.texto.replace(/\s+/g, " ").slice(0, 60)
       || "Nova conversa";
-    const resumo: Conversa = { id: conversaId, titulo, criadaEm: antiga?.criadaEm ?? Date.now(), atualizadaEm: Date.now() };
-    setConversas([resumo, ...conversas.filter((x) => x.id !== conversaId)]);
-    naFila(async () => {
-      const r = await fetch("/api/conversas", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: conversaId, titulo, mensagens: await mensagensLeves(estaveis) }),
-      });
-      if (!r.ok) setAviso("Não foi possível salvar a conversa na nuvem. Ela continua aberta aqui.");
-    });
+    const conversa: Conversa = { id: conversaId, titulo, criadaEm: antiga?.criadaEm ?? Date.now(), atualizadaEm: Date.now(), mensagens: estaveis };
+    setConversas([conversa, ...conversas.filter((x) => x.id !== conversaId)]);
+    mensagensLeves(estaveis).then((leves) => salvarConversa({ ...conversa, mensagens: leves }));
   }, [mensagens, conversaId, conversas]);
 
   // ─── Senha da equipe ────────────────────────────────────────────────────────
@@ -224,15 +192,20 @@ export default function GeradorPage() {
     }).catch(() => setAcesso("ok"));
   }, [carregarHistorico, carregarConversas]);
 
-  // Ao voltar para a aba, atualiza conversas e artes (para ver o que os colegas fizeram)
+  // Ao voltar para a aba, atualiza as artes da equipe — no máximo a cada 10 minutos
+  // (cada atualização é uma listagem, que conta no limite mensal do Vercel Blob)
+  const ultimaAtualizacao = useRef(0);
   useEffect(() => {
     if (acesso !== "ok") return;
+    ultimaAtualizacao.current = Date.now();
     const aoVoltar = () => {
-      if (document.visibilityState === "visible") { carregarConversas(); carregarHistorico(); }
+      if (document.visibilityState !== "visible" || Date.now() - ultimaAtualizacao.current < 10 * 60_000) return;
+      ultimaAtualizacao.current = Date.now();
+      carregarHistorico();
     };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => document.removeEventListener("visibilitychange", aoVoltar);
-  }, [acesso, carregarConversas, carregarHistorico]);
+  }, [acesso, carregarHistorico]);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -448,9 +421,11 @@ export default function GeradorPage() {
       // Se a proposta anexada virou a arte a editar, ela não vai de novo como anexo
       (editandoAnexo ? outrosAnexos : anexosEnviados).forEach((img) => fd.append("imagens", img.file));
       if (editando) {
-        // Arte do histórico vai pelo caminho (leve); arte só local vai como imagem
-        if (editando.caminho) fd.append("basePath", editando.caminho);
-        else fd.append("baseImage", editando.url);
+        // Se a imagem da arte já está aqui no navegador (arte desta conversa ou proposta
+        // anexada), ela vai direto — não depende de ler o armazenamento. Arte aberta
+        // pelo histórico vai pelo caminho.
+        if (editando.url.startsWith("data:")) fd.append("baseImage", editando.url);
+        else if (editando.caminho) fd.append("basePath", editando.caminho);
         fd.append("logomarcaBase", editando.logomarca);
         fd.append("regrasEdicao", regrasEdicao);
         fd.append("quadros", (chat.quadros || []).join(","));
@@ -561,37 +536,20 @@ export default function GeradorPage() {
     textareaRef.current?.focus();
   };
 
-  // Reabre uma conversa do histórico (vem da nuvem), do ponto em que parou
-  const pedidoAbrirRef = useRef<string | null>(null); // se clicar em outra antes de carregar, vale a última
-  const abrirConversa = async (c: Conversa) => {
+  // Reabre uma conversa (guardada neste navegador), do ponto em que parou
+  const abrirConversa = (c: Conversa) => {
     if (c.id === conversaIdRef.current) return;
-    pedidoAbrirRef.current = c.id;
-    setAbrindoConversa(c.id);
-    try {
-      const r = await fetch(`/api/conversas?id=${encodeURIComponent(c.id)}`);
-      const d = await r.json();
-      if (pedidoAbrirRef.current !== c.id) return;
-      if (!r.ok || !d.conversa) {
-        setAviso(r.status === 404 ? "Essa conversa foi apagada por alguém da equipe." : "Não foi possível abrir a conversa.");
-        if (r.status === 404) setConversas((prev) => prev.filter((x) => x.id !== c.id));
-        return;
-      }
-      const msgs: Mensagem[] = d.conversa.mensagens || [];
-      if (ocupado) parar(); // interrompe o pedido da conversa atual
-      conversaIdRef.current = c.id;
-      salvoRef.current = assinaturaDe(c.id, msgs); // abrir não conta como alteração
-      setConversaId(c.id);
-      setMensagens(msgs);
-      setBaseArte(null);
-      setImagens([]);
-      setTexto("");
-      setAviso("");
-      if (window.innerWidth < 1024) setLateralAberta(false);
-    } catch {
-      setAviso("Sem conexão para abrir a conversa. Tente de novo.");
-    } finally {
-      if (pedidoAbrirRef.current === c.id) setAbrindoConversa(null);
-    }
+    if (ocupado) parar(); // interrompe o pedido da conversa atual
+    const msgs = c.mensagens || [];
+    conversaIdRef.current = c.id;
+    salvoRef.current = assinaturaDe(c.id, msgs); // abrir não conta como alteração
+    setConversaId(c.id);
+    setMensagens(msgs);
+    setBaseArte(null);
+    setImagens([]);
+    setTexto("");
+    setAviso("");
+    if (window.innerWidth < 1024) setLateralAberta(false);
   };
 
   // Renomear conversa (lápis ou duplo clique no título). Não muda a ordem da lista.
@@ -610,25 +568,16 @@ export default function GeradorPage() {
     const titulo = tituloEditado.replace(/\s+/g, " ").trim().slice(0, 80);
     const c = conversas.find((x) => x.id === id);
     if (!c || !titulo || titulo === c.titulo) return;
-    setConversas((prev) => prev.map((x) => (x.id === id ? { ...x, titulo } : x)));
-    naFila(async () => {
-      const r = await fetch("/api/conversas", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, titulo }), // sem mensagens = só renomear
-      });
-      if (!r.ok) { setAviso("Não foi possível renomear a conversa."); carregarConversas(); }
-    });
+    const renomeada = { ...c, titulo };
+    setConversas((prev) => prev.map((x) => (x.id === id ? renomeada : x)));
+    salvarConversa(renomeada);
   };
 
   const apagarConversa = (c: Conversa) => {
-    if (!window.confirm(`Apagar a conversa "${c.titulo}" para toda a equipe? As artes dela continuam na aba Artes.`)) return;
+    if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela continuam na aba Artes.`)) return;
     setConversas((prev) => prev.filter((x) => x.id !== c.id));
     if (c.id === conversaIdRef.current) novaConversa();
-    naFila(async () => {
-      const r = await fetch(`/api/conversas?id=${encodeURIComponent(c.id)}`, { method: "DELETE" });
-      if (!r.ok) { setAviso("Não foi possível apagar a conversa. Tente de novo."); carregarConversas(); }
-    });
+    excluirConversa(c.id);
   };
 
   const montarNomeArquivo = (arte: ArteGerada) => {
@@ -874,7 +823,7 @@ export default function GeradorPage() {
             <div className="flex-1 overflow-y-auto px-2 pb-4">
               {conversas.length === 0 ? (
                 <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
-                  As conversas da equipe aparecem aqui, em qualquer computador ou celular.
+                  Suas conversas aparecem aqui e ficam salvas neste navegador.
                 </p>
               ) : gruposConversas.map((g) => (
                 <div key={g.nome}>
@@ -896,7 +845,6 @@ export default function GeradorPage() {
                         <>
                           <button onClick={() => abrirConversa(c)} onDoubleClick={() => comecarRenomear(c)} title={c.titulo}
                             className={`flex-1 min-w-0 flex items-center gap-1.5 text-left px-2 py-2 text-[13px] ${c.id === conversaId ? "text-white" : "text-gray-300"}`}>
-                            {abrindoConversa === c.id && <Loader2 size={12} className="animate-spin shrink-0 text-gray-500" />}
                             <span className="truncate">{c.titulo}</span>
                           </button>
                           <div className="flex mr-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
@@ -1008,7 +956,7 @@ export default function GeradorPage() {
         </>)}
         {/* Aviso da limpeza automática (ver app/api/limpeza) */}
         <p className="shrink-0 border-t border-white/5 px-3 py-2 text-[10px] text-gray-600 text-center">
-          Artes e conversas ficam guardadas por 7 dias.
+          Artes ficam guardadas por 7 dias · conversas, neste navegador.
         </p>
       </aside>
 
