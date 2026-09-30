@@ -476,7 +476,6 @@ export default function GeradorPage() {
       // No histórico usa o endereço da nuvem (mais leve que manter a imagem na memória)
       setArtes((prev) => [{ ...nova, url: final?.arte?.url || nova.url }, ...prev]);
       setAgora(Date.now());
-      if (!final.arte) setAviso("A arte foi gerada, mas não entrou no histórico compartilhado. Baixe-a para não perder.");
     } catch (e: unknown) {
       const cancelado = e instanceof DOMException && e.name === "AbortError";
       atualizarMsg(respId, {
