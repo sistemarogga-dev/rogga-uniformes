@@ -1010,9 +1010,7 @@ export default function GeradorPage() {
           className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
           <SquarePen size={19} />
         </button>
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/simbolo-rogga.png" alt="Rogga" width={30} height={30} className="w-[30px] h-[30px] shrink-0" />
+        <div className="flex-1 min-w-0 flex items-center">
           <span className="text-[#60A5FA] font-semibold text-sm truncate">Gerador de Artes</span>
         </div>
         <button onClick={() => setConfigAberta(true)} title="Configurações"
