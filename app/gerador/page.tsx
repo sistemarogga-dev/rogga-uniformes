@@ -597,10 +597,10 @@ export default function GeradorPage() {
   const [editandoMsgId, setEditandoMsgId] = useState<string | null>(null);
   const [textoEdicaoMsg, setTextoEdicaoMsg] = useState("");
   const comecarEditarMsg = (m: Mensagem) => { setEditandoMsgId(m.id); setTextoEdicaoMsg(m.texto); };
-  const salvarEdicaoMsg = async (m: Mensagem) => {
-    const novo = textoEdicaoMsg.trim();
-    setEditandoMsgId(null);
-    if (!novo || ocupado) return;
+  // Reenvia uma mensagem do designer (com os mesmos anexos), refazendo a conversa a
+  // partir dela. Usado ao editar uma mensagem e no botão "Tentar de novo".
+  const reenviarMensagem = async (m: Mensagem, texto: string) => {
+    if (!texto || ocupado) return;
     const i = mensagens.findIndex((x) => x.id === m.id);
     if (i < 0) return;
     const antes = mensagens.slice(0, i);
@@ -609,9 +609,19 @@ export default function GeradorPage() {
       const blob = await (await fetch(src)).blob();
       return { id: novoId(), file: new File([blob], `anexo-${k + 1}.${blob.type.split("/")[1] || "png"}`, { type: blob.type }), preview: src };
     }));
-    // Se a arte em edição estava depois da mensagem editada, ela sai da conversa
+    // Se a arte em edição estava depois da mensagem, ela sai da conversa
     if (baseArte && !antes.some((x) => x.arte?.timestamp === baseArte.timestamp)) setBaseArte(null);
-    enviar(novo, { antes, anexos });
+    enviar(texto, { antes, anexos });
+  };
+  const salvarEdicaoMsg = (m: Mensagem) => {
+    setEditandoMsgId(null);
+    reenviarMensagem(m, textoEdicaoMsg.trim());
+  };
+  // "Tentar de novo" num erro: reenvia a última mensagem do designer antes dele
+  const tentarDeNovo = (erro: Mensagem) => {
+    const i = mensagens.findIndex((x) => x.id === erro.id);
+    const pedido = [...mensagens.slice(0, i)].reverse().find((x) => x.papel === "user");
+    if (pedido) reenviarMensagem(pedido, pedido.texto);
   };
 
   const novaConversa = () => {
@@ -965,7 +975,7 @@ export default function GeradorPage() {
             <div className="flex-1 overflow-y-auto px-2 pb-4">
               {conversas.length === 0 ? (
                 <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
-                  Suas conversas aparecem aqui e ficam salvas neste navegador.
+                  As conversas da equipe aparecem aqui, em qualquer computador ou celular.
                 </p>
               ) : gruposConversas.map((g) => (
                 <div key={g.nome}>
@@ -1072,7 +1082,7 @@ export default function GeradorPage() {
                 <div key={arte.timestamp}
                   className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#2563EB]/70" : "border-white/10 hover:border-white/25"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={arte.url} alt={arte.logomarca} loading="lazy"
+                  <img src={arte.caminho ? `${arte.url}&mini=1` : arte.url} alt={arte.logomarca} loading="lazy"
                     onClick={() => abrirModal(arte, pasta.artes)}
                     className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
                   <div className="px-2 py-1.5">
@@ -1097,6 +1107,10 @@ export default function GeradorPage() {
           })}
         </div>
         </>)}
+        {/* Aviso da limpeza automática (ver app/api/limpeza) */}
+        <p className="shrink-0 border-t border-white/5 px-3 py-2 text-[10px] text-gray-600 text-center">
+          Artes e conversas ficam guardadas por 7 dias.
+        </p>
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
@@ -1203,6 +1217,12 @@ export default function GeradorPage() {
                           {m.status === "erro" && <AlertCircle size={16} className="mt-1 shrink-0" />}
                           {m.texto}
                         </p>
+                      )}
+                      {m.status === "erro" && !ocupado && (
+                        <button onClick={() => tentarDeNovo(m)}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-gray-200 bg-white/10 hover:bg-white/15 rounded-full px-3 py-1.5 transition-colors">
+                          <RotateCcw size={13} /> Tentar de novo
+                        </button>
                       )}
                       {m.status === "gerando" && (
                         <div className="relative w-full max-w-[300px] aspect-[9/16] rounded-2xl overflow-hidden bg-white/[0.04] border border-white/10">

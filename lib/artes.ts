@@ -48,8 +48,34 @@ export async function salvarArteNuvem(
     ...(dados.anterior ? { a: dados.anterior } : {}),
   })).toString("base64url");
   const caminho = `${PREFIXO}${dados.timestamp}__${meta}.jpg`;
-  await put(caminho, jpeg, { access: "private", contentType: "image/jpeg", addRandomSuffix: false, allowOverwrite: true });
+  await Promise.all([
+    put(caminho, jpeg, { access: "private", contentType: "image/jpeg", addRandomSuffix: false, allowOverwrite: true }),
+    salvarMiniatura(dados.timestamp, jpeg).catch(() => null), // se falhar, é criada ao abrir a galeria
+  ]);
   return lerCaminho(caminho)!;
+}
+
+// ─── Miniaturas (galeria) ─────────────────────────────────────────────────────
+// A galeria mostra uma versão pequena de cada arte (~20 KB em vez de ~330 KB).
+// Fica em "miniaturas/<timestamp>.webp"; artes antigas ganham a sua na primeira vez
+// que aparecem na galeria.
+
+const caminhoMiniatura = (timestamp: number) => `miniaturas/${timestamp}.webp`;
+
+async function salvarMiniatura(timestamp: number, arte: Buffer): Promise<Buffer> {
+  const mini = await sharp(arte).resize(270, 480, { fit: "cover" }).webp({ quality: 72 }).toBuffer();
+  await put(caminhoMiniatura(timestamp), mini, { access: "private", contentType: "image/webp", addRandomSuffix: false, allowOverwrite: true });
+  return mini;
+}
+
+/** Miniatura de uma arte; se ainda não existir, cria a partir da arte e guarda. */
+export async function miniaturaDaArte(caminho: string): Promise<Buffer | null> {
+  const arte = lerCaminho(caminho);
+  if (!arte) return null;
+  const r = await get(caminhoMiniatura(arte.timestamp), { access: "private" }).catch(() => null);
+  if (r && r.statusCode === 200 && r.stream) return Buffer.from(await new Response(r.stream).arrayBuffer());
+  const completa = await bufferDaArte(caminho).catch(() => null);
+  return completa ? salvarMiniatura(arte.timestamp, completa) : null;
 }
 
 export async function listarArtesNuvem(): Promise<ArteSalva[]> {
@@ -78,7 +104,44 @@ export async function bufferDaArte(caminho: string): Promise<Buffer | null> {
 }
 
 export async function excluirArteNuvem(caminho: string) {
-  await del(caminho);
+  const arte = lerCaminho(caminho);
+  await del(arte ? [caminho, caminhoMiniatura(arte.timestamp)] : [caminho]);
+}
+
+// ─── Limpeza automática ──────────────────────────────────────────────────────
+
+/**
+ * Apaga as artes (e miniaturas) com mais de `dias` dias, e os logos originais que
+ * nenhuma arte restante usa mais. Devolve quantos arquivos saíram de cada tipo.
+ */
+export async function limparArtesAntigas(dias: number) {
+  const limite = Date.now() - dias * 86_400_000;
+  const todas = await listarArtesNuvem();
+  const velhas = todas.filter((a) => a.timestamp < limite);
+  const ficam = todas.filter((a) => a.timestamp >= limite);
+  const logosEmUso = new Set(ficam.flatMap((a) => a.logos));
+
+  const listarTudo = async (prefix: string) => {
+    const blobs: Array<{ pathname: string; uploadedAt: Date }> = [];
+    let cursor: string | undefined;
+    do {
+      const r = await list({ prefix, cursor, limit: 1000 });
+      blobs.push(...r.blobs);
+      cursor = r.hasMore ? r.cursor : undefined;
+    } while (cursor);
+    return blobs;
+  };
+  const tsDasArtes = new Set(ficam.map((a) => a.timestamp));
+  const miniaturasSoltas = (await listarTudo("miniaturas/"))
+    .filter((b) => !tsDasArtes.has(Number(b.pathname.match(/^miniaturas\/(\d+)\.webp$/)?.[1])))
+    .map((b) => b.pathname);
+  const logosSoltos = (await listarTudo("logos/"))
+    .filter((b) => b.uploadedAt.getTime() < limite && !logosEmUso.has(b.pathname.replace(/^logos\/|\.png$/g, "")))
+    .map((b) => b.pathname);
+
+  const apagar = [...velhas.map((a) => a.caminho), ...miniaturasSoltas, ...logosSoltos];
+  for (let i = 0; i < apagar.length; i += 500) await del(apagar.slice(i, i + 500));
+  return { artes: velhas.length, miniaturas: miniaturasSoltas.length, logos: logosSoltos.length };
 }
 
 // ─── Logos originais ─────────────────────────────────────────────────────────

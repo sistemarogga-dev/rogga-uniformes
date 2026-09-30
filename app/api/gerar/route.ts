@@ -281,14 +281,15 @@ O QUE MUDA (E SOMENTE ISSO):
   // Em modo stream a OpenAI manda prévias (partial_images) antes da imagem final.
   const gerarImagem = async (modelo: string, stream: boolean, onParcial: (b: Buffer) => void) => {
     const { w, h } = tamanhoDe(modelo);
-    const baseRedim = await sharp(base).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+    // Referência e arte atual vão em JPEG de alta qualidade (~0,5 MB cada, em vez de
+    // 2–4 MB em PNG): envio mais rápido para a OpenAI, sem perda visível.
+    const paraEnvio = (img: Buffer) =>
+      sharp(img).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
     // Ordem: 1ª referência (molde do layout), 2ª arte atual (só na edição), depois anexos
-    const atualRedim = arteAtual
-      ? await sharp(arteAtual).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer()
-      : null;
+    const [baseRedim, atualRedim] = await Promise.all([paraEnvio(base), arteAtual ? paraEnvio(arteAtual) : null]);
     const files = await Promise.all([
-      toFile(baseRedim, "template.png", { type: "image/png" }),
-      ...(atualRedim ? [toFile(atualRedim, "arte-atual.png", { type: "image/png" })] : []),
+      toFile(baseRedim, "template.jpg", { type: "image/jpeg" }),
+      ...(atualRedim ? [toFile(atualRedim, "arte-atual.jpg", { type: "image/jpeg" })] : []),
       ...logosOriginais.map((b, i) => toFile(b, `logo-original-${i + 1}.png`, { type: "image/png" })),
       ...anexos.map((a, i) => toFile(a.buffer, `imagem-${i + 1}.png`, { type: a.type })),
     ].slice(0, 16));

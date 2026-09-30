@@ -76,6 +76,20 @@ export async function salvarConversaNuvem(id: string, titulo: string, mensagens?
   return { id, titulo: tituloLimpo, criadaEm: Number(id.split("-")[0]), atualizadaEm: Date.now() };
 }
 
+/** Apaga as conversas sem atividade há mais de `dias` dias. Devolve quantas saíram. */
+export async function limparConversasAntigas(dias: number): Promise<number> {
+  const limite = Date.now() - dias * 86_400_000;
+  const velhas: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const r = await list({ prefix: PREFIXO, cursor, limit: 1000 });
+    velhas.push(...r.blobs.filter((b) => b.uploadedAt.getTime() < limite).map((b) => b.pathname));
+    cursor = r.hasMore ? r.cursor : undefined;
+  } while (cursor);
+  for (let i = 0; i < velhas.length; i += 500) await del(velhas.slice(i, i + 500));
+  return velhas.length;
+}
+
 export async function excluirConversaNuvem(id: string) {
   const caminhos = await caminhosDa(id);
   if (caminhos.length) await del(caminhos);
