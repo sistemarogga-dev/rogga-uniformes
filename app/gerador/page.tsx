@@ -38,28 +38,6 @@ async function mensagensLeves(msgs: Mensagem[]): Promise<Mensagem[]> {
   return Promise.all(msgs.map(async (m) => (m.anexos?.length ? { ...m, anexos: await Promise.all(m.anexos.map(miniatura)) } : m)));
 }
 
-// Frases da tela inicial (uma sorteada a cada conversa nova)
-const FRASES = [
-  "Café na mão, logo no anexo: bora criar?",
-  "Prazo é igual camiseta lavada errado: sempre parece que encolheu.",
-  "O cliente quer “algo moderno, mas clássico”. Vamos nessa?",
-  "“É só um ajustezinho”, disse o cliente. Pode mandar!",
-  "“Aumenta a logo” — disse todo cliente, desde sempre.",
-  "Designer não erra: cria versões alternativas.",
-  "Reunião que podia ser e-mail? Aqui é arte que sai num clique.",
-  "Se a vida te der limões, faz um uniforme amarelo.",
-  "A pressa é inimiga da perfeição… mas a IA é amiga do prazo.",
-  "Qual é a missão de hoje, chefe?",
-  "Mais uma proposta saindo? O comercial agradece!",
-  "Segunda-feira de novo? Pelo menos o uniforme já está escolhido.",
-  "Trabalho em equipe: você manda o logo, eu faço o resto.",
-  "Meu superpoder: transformar “faz qualquer coisa” em arte aprovada.",
-  "A arte fica pronta antes do seu café esfriar. Testa aí!",
-  "Cliente indeciso? Relaxa, a gente faz até ele decidir.",
-  "Sexta-feira chegando e a proposta saindo. Bora?",
-  "Uniforme bonito é igual piada boa: todo mundo quer mostrar.",
-];
-
 const segundos = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s`;
@@ -178,16 +156,6 @@ export default function GeradorPage() {
   }, [arteModal, navegarModal]);
   // Artes já baixadas nesta sessão (o botão "Baixar" fica azul depois do clique)
   const [baixadas, setBaixadas] = useState<Set<number>>(new Set());
-  // Frase da tela inicial: sorteada depois de carregar (sem diferença servidor × navegador)
-  const [frase, setFrase] = useState(FRASES[0]);
-  const sortearFrase = useCallback(() => {
-    setFrase((atual) => {
-      const outras = FRASES.filter((f) => f !== atual);
-      return outras[Math.floor(Math.random() * outras.length)];
-    });
-  }, []);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { sortearFrase(); }, [sortearFrase]);
   // Comparar antes/depois de uma edição
   const [comparar, setComparar] = useState<{ antes: string; depois: string; titulo: string } | null>(null);
   useEffect(() => {
@@ -647,7 +615,6 @@ export default function GeradorPage() {
   };
 
   const novaConversa = () => {
-    sortearFrase();
     if (ocupado) parar();
     conversaIdRef.current = null;
     setConversaId(null);
@@ -1163,8 +1130,8 @@ export default function GeradorPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-rogga.png" alt="Rogga Uniformes" width={640} height={210}
               className="mx-auto mb-6 w-52 sm:w-64 h-auto" />
-            <h1 className="text-center text-xl sm:text-2xl font-semibold text-white mb-8 min-h-[2lh] sm:min-h-0 text-balance">
-              {frase}
+            <h1 className="text-center text-2xl sm:text-3xl font-semibold text-white mb-8">
+              O que vamos criar hoje?
             </h1>
             {composer}
           </div>
