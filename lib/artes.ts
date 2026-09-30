@@ -1,7 +1,9 @@
-import { put, list, del, get } from "@vercel/blob";
+import { get } from "@vercel/blob";
 import sharp from "sharp";
 
-// Histórico compartilhado das artes, no Vercel Blob PRIVADO (store "rogga-artes").
+// Histórico ANTIGO das artes, no Vercel Blob PRIVADO (store "rogga-artes").
+// O app NÃO grava mais artes nem logos na nuvem (as artes ficam nas conversas, no
+// navegador). Isto só serve para abrir artes antigas das conversas e para a limpeza.
 // Cada arte é um JPEG em "artes/<timestamp>__<meta>.jpg", onde <meta> é um JSON curto
 // em base64url: l = marca, v = vendedor, g = logos originais (ids em "logos/"),
 // a = timestamp da arte anterior (quando é uma edição). Assim listar o histórico é
@@ -19,7 +21,6 @@ export interface ArteSalva {
   anterior?: number; // timestamp da arte que foi editada para gerar esta
 }
 
-const PREFIXO = "artes/";
 
 const urlDa = (caminho: string) => `/api/artes/imagem?p=${encodeURIComponent(caminho)}`;
 
@@ -37,21 +38,6 @@ function lerCaminho(caminho: string): ArteSalva | null {
 
 export const caminhoValido = (caminho: string) => lerCaminho(caminho) !== null;
 
-export async function salvarArteNuvem(
-  jpeg: Buffer,
-  dados: { timestamp: number; logomarca: string; vendedor: string; logos?: string[]; anterior?: number },
-): Promise<ArteSalva> {
-  const meta = Buffer.from(JSON.stringify({
-    l: dados.logomarca.slice(0, 60),
-    v: dados.vendedor.slice(0, 40),
-    ...(dados.logos?.length ? { g: dados.logos.slice(0, 4) } : {}),
-    ...(dados.anterior ? { a: dados.anterior } : {}),
-  })).toString("base64url");
-  const caminho = `${PREFIXO}${dados.timestamp}__${meta}.jpg`;
-  await put(caminho, jpeg, { access: "private", contentType: "image/jpeg", addRandomSuffix: false, allowOverwrite: true });
-  return lerCaminho(caminho)!;
-}
-
 // ─── Miniaturas (galeria) ─────────────────────────────────────────────────────
 // A galeria mostra uma versão pequena de cada arte (~20 KB em vez de ~340 KB). Ela é
 // gerada na hora a partir da arte e NÃO é gravada: gravar custaria 1 das 2.000
@@ -65,20 +51,6 @@ export async function miniaturaDaArte(caminho: string): Promise<Buffer | null> {
   return completa ? sharp(completa).resize(270, 480, { fit: "cover" }).webp({ quality: 72 }).toBuffer() : null;
 }
 
-export async function listarArtesNuvem(): Promise<ArteSalva[]> {
-  const artes: ArteSalva[] = [];
-  let cursor: string | undefined;
-  do {
-    const r = await list({ prefix: PREFIXO, cursor, limit: 1000 });
-    for (const b of r.blobs) {
-      const a = lerCaminho(b.pathname);
-      if (a) artes.push(a);
-    }
-    cursor = r.hasMore ? r.cursor : undefined;
-  } while (cursor);
-  return artes.sort((a, b) => b.timestamp - a.timestamp);
-}
-
 export async function lerArteNuvem(caminho: string) {
   return get(caminho, { access: "private" });
 }
@@ -90,27 +62,9 @@ export async function bufferDaArte(caminho: string): Promise<Buffer | null> {
   return Buffer.from(await new Response(r.stream).arrayBuffer());
 }
 
-export async function excluirArteNuvem(caminho: string) {
-  await del(caminho);
-}
-
 /** Dados de uma arte a partir do caminho (usado pela limpeza). */
 export const arteDoCaminho = lerCaminho;
 
 // ─── Logos originais ─────────────────────────────────────────────────────────
 
 export const logoIdValido = (id: unknown): id is string => typeof id === "string" && /^\d{10,}-\d{1,2}$/.test(id);
-
-/** Guarda o arquivo original de uma logo (PNG, até 1024px) e devolve o id. */
-export async function salvarLogoNuvem(imagem: Buffer, id: string): Promise<string> {
-  const png = await sharp(imagem).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
-  await put(`logos/${id}.png`, png, { access: "private", contentType: "image/png", addRandomSuffix: false, allowOverwrite: true });
-  return id;
-}
-
-export async function bufferDoLogo(id: string): Promise<Buffer | null> {
-  if (!logoIdValido(id)) return null;
-  const r = await get(`logos/${id}.png`, { access: "private" }).catch(() => null);
-  if (!r || r.statusCode !== 200 || !r.stream) return null;
-  return Buffer.from(await new Response(r.stream).arrayBuffer());
-}

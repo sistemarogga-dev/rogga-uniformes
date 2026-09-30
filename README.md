@@ -12,14 +12,15 @@ propostas de uniformes a partir de uma arte de referência fixa.
 2. `/api/chat` (gpt-4.1-mini) conversa e decide: responder, **criar** uma arte nova ou
    **editar** uma arte existente (e quais quadros a edição afeta).
 3. `/api/gerar` gera a imagem com `gpt-image-2` (cai para `gpt-image-1.5` se precisar),
-   em qualidade `medium` e sem prévias (economia). A IA gera só um **recorte** — a área
+   na qualidade escolhida ao lado do botão de enviar (**Low**, padrão, ou **Medium**) e sem prévias (economia). A IA gera só um **recorte** — a área
    dos quadros (864x1152) na criação, ou só os quadros citados na edição — e ele é recolado
    sobre a arte de referência (`public/template.png`). Cabeçalho, etiquetas, bordas e
    rodapé nunca mudam. O consumo de tokens de cada geração aparece no log (`[gerar] ... uso:`).
    - **Criação:** usa as regras rígidas (Configurações).
    - **Edição:** usa as regras de edição (Configurações) + cores medidas na arte atual,
      reenvia o logo original e só refaz os quadros citados; os outros saem pixel a pixel.
-4. A arte vai para o histórico da equipe (Vercel Blob privado), com miniatura para a galeria.
+4. A arte volta para a conversa e fica **só no navegador** do designer (IndexedDB), junto com os logos
+   originais reduzidos, que são reenviados nas edições. Nada é gravado na nuvem.
 
 ## Onde fica cada coisa
 
@@ -32,7 +33,7 @@ propostas de uniformes a partir de uma arte de referência fixa.
 | `app/gerador/historico.ts` | Tipos e o armazenamento antigo do navegador (só para migração) |
 | `app/api/chat` | Conversa e decisão (criar / editar / responder) |
 | `app/api/gerar` | Geração da imagem, máscara dos quadros, medição de cores |
-| `app/api/artes` | Histórico de artes (listar, migrar, excluir, imagem e miniatura) |
+| `app/api/artes/imagem` | Abre artes antigas que ficaram no histórico da nuvem |
 | `app/api/conversas` | Conversas da equipe (listar, abrir, salvar, renomear, apagar) |
 | `app/api/acesso` | Senha da equipe |
 | `app/api/limpeza` | Limpeza diária (Vercel Cron, `vercel.json`) |
@@ -44,7 +45,7 @@ propostas de uniformes a partir de uma arte de referência fixa.
 |---|---|
 | `OPENAI_API_KEY` | Geração de imagens e chat |
 | `TEAM_PASSWORD` | Senha da equipe (trocar desloga todo mundo) |
-| `BLOB_READ_WRITE_TOKEN` | Armazenamento privado das artes, logos e conversas |
+| `BLOB_READ_WRITE_TOKEN` | Histórico antigo na nuvem (só leitura e limpeza) |
 | `CRON_SECRET` | Autoriza a limpeza diária |
 | `IMAGE_MODEL` | (opcional) modelo de imagem; padrão `gpt-image-2` |
 | `LIMITE_GERACOES_HORA` | (opcional) limite de gerações por hora; padrão 60 |

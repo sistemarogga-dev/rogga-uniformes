@@ -3,16 +3,15 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import { exigirAcesso, passouDoLimite } from "@/lib/acesso";
-import {
-  bufferDaArte, bufferDoLogo, caminhoValido, logoIdValido, salvarArteNuvem, salvarLogoNuvem, type ArteSalva,
-} from "@/lib/artes";
+import { bufferDaArte, caminhoValido } from "@/lib/artes";
 
 export const dynamic = "force-dynamic";
-// A geração de imagem pode passar de 1 minuto em qualidade alta.
+// A geração de imagem pode passar de 1 minuto.
 export const maxDuration = 300;
 
 // A resposta é um fluxo NDJSON (uma linha JSON por evento):
-//   { tipo: "final", url, prompt, logomarca, categoria, tempoMs, timestamp, arte }
+//   { tipo: "final", url, prompt, logomarca, categoria, tempoMs, timestamp, uso }
+// Nada é guardado na nuvem: a arte volta para a conversa, no navegador do designer.
 //   { tipo: "erro", error }
 
 // ─── ZONAS EDITÁVEIS ───────────────────────────────────────────────────────────
@@ -183,18 +182,18 @@ export async function POST(request: Request) {
   const regras = (formData.get("regras") as string) || "";
   const promptUser = (formData.get("prompt") as string) || "";
   const usarMascara = (formData.get("usarMascara") as string) !== "false";
-  // Qualidade fixa em "medium": a "high" custava ~4x mais por arte
-  const qualidade = "medium";
-  const vendedor = ((formData.get("vendedor") as string) || "").slice(0, 40);
+  // "low" (padrão, bem mais barata) ou "medium" — escolhida na caixa de mensagem
+  const qualidade: "low" | "medium" = (formData.get("qualidade") as string) === "medium" ? "medium" : "low";
   const imagens = formData.getAll("imagens") as File[];
-  // Edição: a arte-base vem do histórico (basePath) ou como data URL (baseImage).
+  // Edição: a arte-base vem como data URL (baseImage) ou, se for uma arte antiga da nuvem, pelo caminho (basePath).
   const basePath = (formData.get("basePath") as string) || "";
   const baseImage = formData.get("baseImage") as string | null;
   const logomarcaBase = ((formData.get("logomarcaBase") as string) || "").slice(0, 60);
   // Edição: regras de edição (Configurações), quadros que podem mudar e logos originais
   const regrasEdicao = (formData.get("regrasEdicao") as string) || "";
   const quadrosPedidos = ((formData.get("quadros") as string) || "").split(",").filter((q) => ZONAS.some((z) => z.nome === q));
-  const logosAnteriores = ((formData.get("logos") as string) || "").split(",").filter(logoIdValido).slice(0, 4);
+  // Logos originais do cliente (guardados na conversa), reenviados em toda edição
+  const logosEnviados = (formData.getAll("logosOriginais") as File[]).filter((f) => f && typeof f === "object" && f.size > 0).slice(0, 4);
 
   if (!promptUser.trim()) {
     return Response.json({ error: "Escreva o prompt da arte que deseja gerar." }, { status: 400 });
@@ -232,10 +231,7 @@ IMPORTANTE — RECORTE: as imagens da arte (referência${editando ? " e arte atu
 
   // Edição: só os quadros pedidos mudam; os outros vêm da arte atual pixel a pixel
   const quadros = quadrosDaRegiao;
-  const anterior = basePath ? Number(basePath.match(/^artes\/(\d+)__/)?.[1]) || undefined : undefined;
-  const logosOriginais = editando
-    ? (await Promise.all(logosAnteriores.map((id) => bufferDoLogo(id).catch(() => null)))).filter((b): b is Buffer => !!b)
-    : [];
+  const logosOriginais = editando ? await Promise.all(logosEnviados.map(async (f) => Buffer.from(await f.arrayBuffer()))) : [];
   const cores = arteAtual ? await medirCores(arteAtual).catch(() => "") : "";
 
   // Informações automáticas da edição (mudam a cada arte, por isso não ficam nas Configurações)
@@ -409,19 +405,6 @@ O QUE MUDA (E SOMENTE ISSO):
         const logomarca = editando ? (logomarcaBase || analise.logomarca) : anexos.length ? analise.logomarca : (logomarcaBase || analise.logomarca);
         const timestamp = Date.now();
 
-        // Guarda os anexos originais (logos) para as próximas edições desta arte
-        const logosNovos = (await Promise.all(
-          anexos.slice(0, 4).map((a, i) => salvarLogoNuvem(a.buffer, `${timestamp}-${i}`).catch(() => null)),
-        )).filter((id): id is string => !!id);
-        const logos = [...logosAnteriores, ...logosNovos].slice(0, 4);
-
-        // Salva no histórico compartilhado. Se falhar, a arte ainda chega ao designer.
-        let arte: ArteSalva | null = null;
-        try {
-          arte = await salvarArteNuvem(finalImg, { timestamp, logomarca, vendedor, logos, anterior });
-        } catch (e) {
-          console.error("[gerar] não salvou no histórico:", (e as Error).message);
-        }
 
         enviar({
           tipo: "final",
@@ -431,9 +414,6 @@ O QUE MUDA (E SOMENTE ISSO):
           categoria: analise.categoria,
           tempoMs: Date.now() - inicio,
           timestamp,
-          arte,
-          logos,
-          anterior,
           uso: gerada.uso ? { ...gerada.uso, tamanho: gerada.tamanho } : undefined,
         });
       } catch (err: unknown) {

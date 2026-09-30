@@ -1,9 +1,8 @@
-// Dados guardados no navegador (IndexedDB):
-// - "conversas": as conversas de cada designer (como no ChatGPT). Ficam no navegador,
-//   porque o app não tem login individual. As artes em si ficam na nuvem; a conversa
-//   só guarda o endereço delas.
-// - "artes": histórico ANTIGO de artes (antes da nuvem). Só serve para migrar as artes
-//   antigas de cada navegador para a nuvem uma única vez.
+// Dados guardados no navegador (IndexedDB): as conversas de cada designer (como no
+// ChatGPT), com as artes dentro delas. Nada fica guardado na nuvem.
+// (O depósito "artes" é de uma versão antiga; continua existindo só para não quebrar o banco.)
+
+export type Qualidade = "low" | "medium";
 
 export interface ArteGerada {
   url: string;
@@ -11,10 +10,10 @@ export interface ArteGerada {
   logomarca: string;
   vendedor: string;
   timestamp: number;
-  caminho?: string; // arte salva no histórico compartilhado (pathname no Blob)
+  caminho?: string; // arte ANTIGA, salva no histórico da nuvem (pathname no Blob)
   tempoMs?: number; // quanto tempo a geração levou
-  logos?: string[]; // ids dos arquivos de logo originais (reenviados nas edições)
-  anterior?: number; // timestamp da arte que foi editada para gerar esta
+  logosSrc?: string[]; // logos originais do cliente, reduzidos (reenviados nas edições)
+  qualidade?: Qualidade; // qualidade usada na geração
   antes?: string; // endereço da versão anterior (botão "Comparar")
 }
 
@@ -62,26 +61,6 @@ async function transacao<T>(store: string, modo: IDBTransactionMode, fn: (s: IDB
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
-}
-
-// ─── Artes antigas (só migração) ─────────────────────────────────────────────
-
-/** Todas as artes antigas deste navegador, da mais recente para a mais antiga. */
-export async function listarArtes(): Promise<ArteGerada[]> {
-  try {
-    const todas = await transacao<ArteGerada[]>(ARTES, "readonly", (s) => s.getAll());
-    return todas.sort((a, b) => b.timestamp - a.timestamp);
-  } catch {
-    return []; // navegador sem IndexedDB (ex: aba anônima restrita)
-  }
-}
-
-export async function excluirArte(timestamp: number): Promise<void> {
-  try {
-    await transacao(ARTES, "readwrite", (s) => s.delete(timestamp));
-  } catch {
-    // ignora
-  }
 }
 
 // ─── Conversas ───────────────────────────────────────────────────────────────

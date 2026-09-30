@@ -3,12 +3,11 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2,
-  RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronRight, Folder, FolderOpen, Timer, MessageSquare, PanelLeftOpen, Pencil, Columns2,
+  RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, PanelLeftClose, Trash2,
+  Timer, MessageSquare, PanelLeftOpen, Pencil, Columns2,
 } from "lucide-react";
 import {
-  type ArteGerada, type Mensagem, type Conversa,
-  listarArtes as listarArtesLocais, excluirArte as excluirArteLocal,
+  type ArteGerada, type Mensagem, type Conversa, type Qualidade,
   listarConversas, salvarConversa, excluirConversa,
 } from "./historico";
 import { REGRAS_PADRAO, REGRAS_EDICAO_PADRAO } from "./regras";
@@ -16,12 +15,14 @@ import TelaSenha from "./componentes/TelaSenha";
 import Configuracoes from "./componentes/Configuracoes";
 import Comparacao from "./componentes/Comparacao";
 import TelaCheia from "./componentes/TelaCheia";
-import { type ImagemEnviada, mensagensLeves, segundos, novoId, lerPreview, ehPropostaRogga } from "./utilidades";
+import { type ImagemEnviada, mensagensLeves, miniatura, segundos, novoId, lerPreview, ehPropostaRogga } from "./utilidades";
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
   const [regrasEdicao, setRegrasEdicao] = useState(REGRAS_EDICAO_PADRAO);
   const [usarMascara, setUsarMascara] = useState(true);
+  // Qualidade da imagem: "low" (padrão, bem mais barata) ou "medium" (mais detalhe)
+  const [qualidade, setQualidade] = useState<Qualidade>("low");
 
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [texto, setTexto] = useState("");
@@ -34,7 +35,7 @@ export default function GeradorPage() {
 
   const [arteModal, setArteModal] = useState<ArteGerada | null>(null);
   const [zoom, setZoom] = useState(1);
-  // Lista percorrida pelas setas na tela cheia (a pasta da galeria ou as artes do chat)
+  // Lista percorrida pelas setas na tela cheia (as artes da conversa)
   const [listaModal, setListaModal] = useState<ArteGerada[]>([]);
   const indiceModal = arteModal ? listaModal.findIndex((a) => a.timestamp === arteModal.timestamp) : -1;
   const abrirModal = (arte: ArteGerada, lista: ArteGerada[]) => {
@@ -75,22 +76,14 @@ export default function GeradorPage() {
   const [configAberta, setConfigAberta] = useState(false);
   const [arrastando, setArrastando] = useState(false);
 
-  // Histórico de artes geradas (lateral esquerda)
-  const [artes, setArtes] = useState<ArteGerada[]>([]);
+  // Barra lateral de conversas
   const [lateralAberta, setLateralAberta] = useState(false);
-  const [busca, setBusca] = useState("");
-  const [dataDe, setDataDe] = useState("");
-  const [dataAte, setDataAte] = useState("");
-  const [filtroDatasAberto, setFiltroDatasAberto] = useState(false);
-  // Pastas cujo estado (aberta/fechada) o designer inverteu em relação ao padrão
-  const [pastasAlternadas, setPastasAlternadas] = useState<Set<string>>(new Set());
-  // "Agora" para os rótulos Hoje/Ontem (atualizado quando o histórico muda)
+  // "Agora" para os rótulos Hoje/Ontem das conversas
   const [agora, setAgora] = useState(() => Date.now());
 
-  // ─── Conversas (lateral, aba "Conversas") — salvas NESTE navegador ──────────────
-  // Ficam no IndexedDB de cada designer (não gastam operações do Vercel Blob). As artes
-  // continuam na nuvem, visíveis para a equipe; a conversa guarda só o endereço delas.
-  const [abaLateral, setAbaLateral] = useState<"conversas" | "artes">("conversas");
+  // ─── Conversas (lateral) — salvas NESTE navegador ────────────────────────────
+  // Ficam no IndexedDB de cada designer, com as artes dentro delas. Nada é guardado
+  // na nuvem: quem quiser manter uma arte, baixa.
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [conversaId, setConversaId] = useState<string | null>(null);
   const conversaIdRef = useRef<string | null>(null); // id síncrono (usado dentro do enviar)
@@ -98,22 +91,11 @@ export default function GeradorPage() {
 
   const carregarConversas = useCallback(async () => {
     setConversas(await listarConversas());
+    setAgora(Date.now());
   }, []);
-
-  useEffect(() => {
-    try {
-      const aba = localStorage.getItem("rogga-aba-lateral");
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (aba === "artes" || aba === "conversas") setAbaLateral(aba);
-    } catch {}
-  }, []);
-  const trocarAba = (aba: "conversas" | "artes") => {
-    setAbaLateral(aba);
-    try { localStorage.setItem("rogga-aba-lateral", aba); } catch {}
-  };
 
   // Só o que já terminou vai para o histórico (nada de "Pensando..." nem prévia).
-  // As artes salvas na nuvem ficam pelo endereço (conversa leve).
+  // Artes antigas, que estavam na nuvem, ficam pelo endereço.
   const mensagensEstaveis = (msgs: Mensagem[]) =>
     msgs
       .filter((m) => !m.status || m.status === "erro")
@@ -149,62 +131,12 @@ export default function GeradorPage() {
   const [erroSenha, setErroSenha] = useState("");
   const [entrando, setEntrando] = useState(false);
 
-  // ─── Histórico compartilhado (nuvem) ────────────────────────────────────────
-  const carregarHistorico = useCallback(async () => {
-    try {
-      const r = await fetch("/api/artes");
-      if (r.status === 401) { setAcesso("bloqueado"); return; }
-      const d = await r.json();
-      const daNuvem: ArteGerada[] = (d.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string; logos?: string[]; anterior?: number }) =>
-        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho, logos: a.logos, anterior: a.anterior }));
-      setArtes(daNuvem);
-      setAgora(Date.now());
-
-      // Migração única: artes que estavam só neste navegador sobem para a nuvem
-      const locais = await listarArtesLocais();
-      if (!locais.length) return;
-      const jaNaNuvem = new Set(daNuvem.map((a) => a.timestamp));
-      for (const a of locais) {
-        if (!jaNaNuvem.has(a.timestamp)) {
-          const fd = new FormData();
-          fd.append("imagem", await (await fetch(a.url)).blob(), "arte.jpg");
-          fd.append("logomarca", a.logomarca);
-          fd.append("vendedor", a.vendedor);
-          fd.append("timestamp", String(a.timestamp));
-          const up = await fetch("/api/artes", { method: "POST", body: fd });
-          if (!up.ok) continue; // tenta de novo na próxima vez
-        }
-        await excluirArteLocal(a.timestamp);
-      }
-      const d2 = await (await fetch("/api/artes")).json();
-      setArtes((d2.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string; logos?: string[]; anterior?: number }) =>
-        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho, logos: a.logos, anterior: a.anterior })));
-    } catch {
-      // sem histórico agora; o gerador continua funcionando
-    }
-  }, []);
-
   useEffect(() => {
     fetch("/api/acesso").then((r) => r.json()).then((d) => {
       setAcesso(d.ok ? "ok" : "bloqueado");
-      if (d.ok) { carregarHistorico(); carregarConversas(); }
+      if (d.ok) carregarConversas();
     }).catch(() => setAcesso("ok"));
-  }, [carregarHistorico, carregarConversas]);
-
-  // Ao voltar para a aba, atualiza as artes da equipe — no máximo a cada 10 minutos
-  // (cada atualização é uma listagem, que conta no limite mensal do Vercel Blob)
-  const ultimaAtualizacao = useRef(0);
-  useEffect(() => {
-    if (acesso !== "ok") return;
-    ultimaAtualizacao.current = Date.now();
-    const aoVoltar = () => {
-      if (document.visibilityState !== "visible" || Date.now() - ultimaAtualizacao.current < 10 * 60_000) return;
-      ultimaAtualizacao.current = Date.now();
-      carregarHistorico();
-    };
-    document.addEventListener("visibilitychange", aoVoltar);
-    return () => document.removeEventListener("visibilitychange", aoVoltar);
-  }, [acesso, carregarHistorico]);
+  }, [carregarConversas]);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -214,7 +146,6 @@ export default function GeradorPage() {
       const d = await r.json();
       if (!d.ok) { setErroSenha(d.error || "Senha incorreta."); return; }
       setSenha(""); setAcesso("ok");
-      carregarHistorico();
       carregarConversas();
     } catch { setErroSenha("Sem conexão. Tente de novo."); }
     finally { setEntrando(false); }
@@ -414,6 +345,7 @@ export default function GeradorPage() {
       fd.append("regras", regras);
       fd.append("prompt", chat.prompt || conteudo);
       fd.append("usarMascara", String(usarMascara));
+      fd.append("qualidade", qualidade);
       // Se a proposta anexada virou a arte a editar, ela não vai de novo como anexo
       (editandoAnexo ? outrosAnexos : anexosEnviados).forEach((img) => fd.append("imagens", img.file));
       if (editando) {
@@ -425,8 +357,16 @@ export default function GeradorPage() {
         fd.append("logomarcaBase", editando.logomarca);
         fd.append("regrasEdicao", regrasEdicao);
         fd.append("quadros", (chat.quadros || []).join(","));
-        fd.append("logos", (editando.logos || []).join(","));
+        // Logos originais do cliente (guardados na arte) vão de novo, para não serem redesenhados
+        for (const [k, src] of (editando.logosSrc || []).entries()) {
+          fd.append("logosOriginais", await (await fetch(src)).blob(), `logo-${k + 1}.png`);
+        }
       }
+      // Logos desta arte = os da arte editada + os anexos novos (em tamanho reduzido)
+      const logosSrc = [
+        ...(editando?.logosSrc || []),
+        ...(await Promise.all((editandoAnexo ? outrosAnexos : anexosEnviados).map((img) => miniatura(img.preview, 512)))),
+      ].slice(0, 4);
 
       const res = await fetch("/api/gerar", { method: "POST", body: fd, signal: controller.signal });
       if (!res.ok || !res.body) {
@@ -435,8 +375,8 @@ export default function GeradorPage() {
         throw new Error(d.error || "Erro ao gerar arte.");
       }
 
-      // Resposta em partes (uma linha JSON por evento): prévias e depois a arte final
-      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number; arte?: { caminho: string; url: string } | null; logos?: string[]; anterior?: number };
+      // Resposta em linhas JSON (evento "final" com a arte ou "erro")
+      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number };
       let final: Evento | null = null;
       const leitor = res.body.getReader();
       const dec = new TextDecoder();
@@ -450,8 +390,7 @@ export default function GeradorPage() {
         for (const linha of linhas) {
           if (!linha.trim()) continue;
           const ev = JSON.parse(linha) as Evento;
-          if (ev.tipo === "parcial" && ev.url) atualizarMsg(respId, { previa: ev.url });
-          else if (ev.tipo === "erro") throw new Error(ev.error || "Erro ao gerar arte.");
+          if (ev.tipo === "erro") throw new Error(ev.error || "Erro ao gerar arte.");
           else if (ev.tipo === "final") final = ev;
         }
       }
@@ -461,17 +400,13 @@ export default function GeradorPage() {
         url: final.url, prompt: final.prompt || "", logomarca: final.logomarca || "Logomarca",
         vendedor: "",
         timestamp: final.timestamp || Date.now(),
-        caminho: final.arte?.caminho, tempoMs: Date.now() - inicio,
-        logos: final.logos, anterior: final.anterior,
-        // versão anterior para o botão "Comparar" (endereço leve quando está na nuvem)
+        tempoMs: Date.now() - inicio, logosSrc, qualidade,
+        // versão anterior para o botão "Comparar"
         antes: editando ? (editando.caminho ? `/api/artes/imagem?p=${encodeURIComponent(editando.caminho)}` : editando.url) : undefined,
       };
       atualizarMsg(respId, { arte: nova, status: undefined, previa: undefined });
       // A arte nova NÃO entra em edição sozinha: só quando o designer clicar em "Editar"
       setBaseArte(null);
-      // No histórico usa o endereço da nuvem (mais leve que manter a imagem na memória)
-      setArtes((prev) => [{ ...nova, url: final?.arte?.url || nova.url }, ...prev]);
-      setAgora(Date.now());
     } catch (e: unknown) {
       const cancelado = e instanceof DOMException && e.name === "AbortError";
       atualizarMsg(respId, {
@@ -483,7 +418,7 @@ export default function GeradorPage() {
       setGerandoImagem(false);
       abortRef.current = null;
     }
-  }, [texto, imagens, ocupado, mensagens, baseArte, regras, regrasEdicao, usarMascara]);
+  }, [texto, imagens, ocupado, mensagens, baseArte, regras, regrasEdicao, usarMascara, qualidade]);
 
   const parar = () => abortRef.current?.abort();
 
@@ -569,7 +504,7 @@ export default function GeradorPage() {
   };
 
   const apagarConversa = (c: Conversa) => {
-    if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela continuam na aba Artes.`)) return;
+    if (!window.confirm(`Apagar a conversa "${c.titulo}"? As artes dela também serão apagadas (as que você baixou continuam no computador).`)) return;
     setConversas((prev) => prev.filter((x) => x.id !== c.id));
     if (c.id === conversaIdRef.current) novaConversa();
     excluirConversa(c.id);
@@ -619,27 +554,16 @@ export default function GeradorPage() {
     textareaRef.current?.focus();
   };
 
-  const excluirDoHistorico = (arte: ArteGerada) => {
-    if (!window.confirm(`Excluir a arte "${arte.logomarca}" do histórico da equipe? Ela some para todos.`)) return;
-    setArtes((prev) => prev.filter((a) => a.timestamp !== arte.timestamp));
-    if (arte.caminho) {
-      fetch(`/api/artes?p=${encodeURIComponent(arte.caminho)}`, { method: "DELETE" }).then((r) => {
-        if (!r.ok) { setAviso("Não foi possível excluir a arte. Tente de novo."); carregarHistorico(); }
-      });
-    }
-  };
-
   const hora = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-  // Versão anterior de uma arte editada (na conversa vem pronta; na aba Artes, pelo histórico)
-  const antesDe = (arte: ArteGerada) =>
-    arte.antes ?? (arte.anterior ? artes.find((a) => a.timestamp === arte.anterior)?.url : undefined);
+  // Versão anterior de uma arte editada (botão "Comparar")
+  const antesDe = (arte: ArteGerada) => arte.antes;
   const abrirComparacao = (arte: ArteGerada) => {
     const antes = antesDe(arte);
     if (antes) setComparar({ antes, depois: arte.url, titulo: arte.logomarca });
   };
 
-  // ─── Histórico: pesquisa, filtro de datas e pastas por dia ─────────────────────
+  // ─── Datas: agrupa as conversas por dia ──────────────────────────────────────
   // Chave do dia no fuso local (AAAA-MM-DD), a mesma usada pelos <input type="date">.
   const chaveDia = (ts: number) => {
     const d = new Date(ts);
@@ -659,34 +583,6 @@ export default function GeradorPage() {
     return texto.charAt(0).toUpperCase() + texto.slice(1);
   };
 
-  const filtroAtivo = !!(busca.trim() || dataDe || dataAte);
-  const termo = busca.trim().toLowerCase();
-  const artesFiltradas = artes.filter((a) => {
-    const dia = chaveDia(a.timestamp);
-    if (dataDe && dia < dataDe) return false;
-    if (dataAte && dia > dataAte) return false;
-    if (termo && !`${a.logomarca} ${a.prompt}`.toLowerCase().includes(termo)) return false;
-    return true;
-  });
-  const pastas: Array<{ chave: string; artes: ArteGerada[] }> = [];
-  for (const a of artesFiltradas) {
-    const chave = chaveDia(a.timestamp);
-    const ultima = pastas[pastas.length - 1];
-    if (ultima?.chave === chave) ultima.artes.push(a);
-    else pastas.push({ chave, artes: [a] });
-  }
-  // A pasta "Hoje" aparece sempre (vazia se ainda não houver arte hoje)
-  if (!filtroAtivo && pastas[0]?.chave !== chaveDia(agora)) pastas.unshift({ chave: chaveDia(agora), artes: [] });
-  // Sem filtro: só a pasta mais recente começa aberta. Com filtro: todas as que têm resultado.
-  const pastaAberta = (chave: string, i: number) =>
-    filtroAtivo || (pastasAlternadas.has(chave) ? i !== 0 : i === 0);
-  const alternarPasta = (chave: string) =>
-    setPastasAlternadas((prev) => {
-      const s = new Set(prev);
-      if (s.has(chave)) s.delete(chave); else s.add(chave);
-      return s;
-    });
-  const limparFiltros = () => { setBusca(""); setDataDe(""); setDataAte(""); };
 
   // Conversas agrupadas por dia da última atividade (Hoje, Ontem, ...)
   const gruposConversas: Array<{ nome: string; itens: Conversa[] }> = [];
@@ -749,17 +645,28 @@ export default function GeradorPage() {
             className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
             <Paperclip size={18} />
           </button>
-          {ocupado ? (
-            <button onClick={parar} title="Parar"
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 transition-colors">
-              <Square size={14} fill="currentColor" />
-            </button>
-          ) : (
-            <button onClick={() => enviar()} title="Enviar" disabled={!texto.trim() && imagens.length === 0}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 disabled:bg-white/20 disabled:text-white/40 transition-colors">
-              <ArrowUp size={18} />
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Qualidade da imagem: Low (padrão, bem mais barata) ou Medium */}
+            <div className="flex rounded-full bg-white/5 border border-white/10 p-0.5 text-xs font-semibold" role="group" aria-label="Qualidade da imagem">
+              {([["low", "Low", "Mais barata — boa para testar ideias e cores"], ["medium", "Medium", "Mais detalhe — custa cerca de 2,5 vezes mais"]] as const).map(([v, nome, dica]) => (
+                <button key={v} onClick={() => setQualidade(v)} title={dica} aria-pressed={qualidade === v}
+                  className={`rounded-full px-3 py-1 transition-colors ${qualidade === v ? "bg-[#2563EB] text-white" : "text-gray-400 hover:text-white"}`}>
+                  {nome}
+                </button>
+              ))}
+            </div>
+            {ocupado ? (
+              <button onClick={parar} title="Parar"
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 transition-colors">
+                <Square size={14} fill="currentColor" />
+              </button>
+            ) : (
+              <button onClick={() => enviar()} title="Enviar" disabled={!texto.trim() && imagens.length === 0}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 disabled:bg-white/20 disabled:text-white/40 transition-colors">
+                <ArrowUp size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
@@ -782,7 +689,7 @@ export default function GeradorPage() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setArrastando(false); }}
       onDrop={(e) => { e.preventDefault(); setArrastando(false); if (e.dataTransfer.files.length) adicionarImagens(e.dataTransfer.files); }}
     >
-      {/* ===== HISTÓRICO DE ARTES (LATERAL) ===== */}
+      {/* ===== CONVERSAS (LATERAL) ===== */}
       {lateralAberta && (
         <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => alternarLateral(false)} />
       )}
@@ -790,25 +697,14 @@ export default function GeradorPage() {
         className={`fixed lg:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col bg-[#0c0c0f] border-r border-white/5 transition-transform duration-200 ${lateralAberta ? "translate-x-0" : "-translate-x-full lg:hidden"}`}
       >
         <div className="flex items-center gap-2 px-3 h-14 shrink-0">
-          {/* Abas: Conversas | Artes */}
-          <div className="flex-1 flex rounded-lg bg-white/5 p-0.5 text-xs font-semibold">
-            <button onClick={() => trocarAba("conversas")}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${abaLateral === "conversas" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}>
-              <MessageSquare size={13} className={abaLateral === "conversas" ? "text-[#60A5FA]" : ""} /> Conversas
-            </button>
-            <button onClick={() => trocarAba("artes")}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${abaLateral === "artes" ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}>
-              <Images size={13} className={abaLateral === "artes" ? "text-[#60A5FA]" : ""} /> Artes
-              <span className="text-[10px] font-normal text-gray-500">{artes.length}</span>
-            </button>
-          </div>
+          <p className="flex-1 flex items-center gap-2 px-1 text-sm font-semibold text-gray-200">
+            <MessageSquare size={15} className="text-[#60A5FA]" /> Conversas
+          </p>
           <button onClick={() => alternarLateral(false)} title="Fechar barra lateral"
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
             <PanelLeftClose size={17} />
           </button>
         </div>
-        {abaLateral === "conversas" ? (
-          <>
             <div className="px-3 pb-2 shrink-0">
               <button onClick={novaConversa}
                 className="w-full flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/5 hover:border-white/20 transition-colors">
@@ -859,99 +755,9 @@ export default function GeradorPage() {
                 </div>
               ))}
             </div>
-          </>
-        ) : (<>
-        {(
-          <div className="px-3 pb-3 space-y-2 shrink-0 border-b border-white/5">
-            <div className="flex gap-1.5">
-              <div className="flex-1 flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-white/25 px-2.5">
-                <Search size={14} className="text-gray-500 shrink-0" />
-                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar marca..."
-                  className="w-full bg-transparent py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none" />
-                {busca && (
-                  <button onClick={() => setBusca("")} aria-label="Limpar pesquisa" className="text-gray-500 hover:text-white"><X size={12} /></button>
-                )}
-              </div>
-              <button onClick={() => setFiltroDatasAberto((v) => !v)} title="Filtrar por data"
-                className={`p-2 rounded-lg border transition-colors ${dataDe || dataAte ? "border-[#2563EB] text-[#60A5FA] bg-[#2563EB]/10" : "border-white/10 text-gray-400 hover:text-white hover:border-white/25"}`}>
-                <CalendarDays size={14} />
-              </button>
-            </div>
-            {filtroDatasAberto && (
-              <div className="grid grid-cols-2 gap-1.5">
-                <label className="text-[10px] text-gray-500">De
-                  <input type="date" value={dataDe} max={dataAte || undefined} onChange={(e) => setDataDe(e.target.value)}
-                    className="mt-0.5 w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-gray-200 [color-scheme:dark] focus:outline-none focus:border-white/25" />
-                </label>
-                <label className="text-[10px] text-gray-500">Até
-                  <input type="date" value={dataAte} min={dataDe || undefined} onChange={(e) => setDataAte(e.target.value)}
-                    className="mt-0.5 w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-gray-200 [color-scheme:dark] focus:outline-none focus:border-white/25" />
-                </label>
-              </div>
-            )}
-            {filtroAtivo && (
-              <div className="flex items-center justify-between text-[11px] text-gray-500">
-                <span>{artesFiltradas.length} de {artes.length} artes</span>
-                <button onClick={limparFiltros} className="hover:text-white underline underline-offset-2">Limpar filtros</button>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {pastas.length === 0 ? (
-            <p className="text-xs text-gray-600 text-center mt-10 px-4 leading-relaxed">
-              Nenhuma arte encontrada com esses filtros.
-            </p>
-          ) : pastas.map((pasta, i) => {
-            const aberta = pastaAberta(pasta.chave, i);
-            return (
-            <div key={pasta.chave} className="mb-1">
-              <button onClick={() => alternarPasta(pasta.chave)}
-                className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg text-left hover:bg-white/5 transition-colors">
-                <ChevronRight size={13} className={`text-gray-500 transition-transform ${aberta ? "rotate-90" : ""}`} />
-                {aberta ? <FolderOpen size={14} className="text-[#2563EB]" /> : <Folder size={14} className="text-gray-500" />}
-                <span className={`flex-1 text-xs font-semibold ${aberta ? "text-white" : "text-gray-300"}`}>{nomePasta(pasta.chave)}</span>
-                <span className="text-[10px] text-gray-500 bg-white/5 rounded-full px-1.5 py-0.5">{pasta.artes.length}</span>
-              </button>
-              {aberta && pasta.artes.length === 0 && (
-                <p className="text-[11px] text-gray-600 px-6 pt-1 pb-3 leading-relaxed">
-                  Nenhuma arte gerada hoje ainda. As próximas aparecem aqui, no histórico da equipe.
-                </p>
-              )}
-              {aberta && pasta.artes.length > 0 && (
-            <div className="grid grid-cols-2 gap-2 pt-1.5 pb-2">
-              {pasta.artes.map((arte) => (
-                <div key={arte.timestamp}
-                  className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] ${baseArte?.timestamp === arte.timestamp ? "border-[#2563EB]/70" : "border-white/10 hover:border-white/25"}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={arte.caminho ? `${arte.url}&mini=1` : arte.url} alt={arte.logomarca} loading="lazy"
-                    onClick={() => abrirModal(arte, pasta.artes)}
-                    className="w-full aspect-[9/16] object-cover cursor-zoom-in" />
-                  <div className="px-2 py-1.5">
-                    <p className="text-[11px] font-semibold text-gray-200 truncate" title={arte.logomarca}>{arte.logomarca}</p>
-                    <p className="text-[10px] text-gray-500">{hora(arte.timestamp)}</p>
-                  </div>
-                  {/* Ações: aparecem no hover (desktop) e sempre no toque */}
-                  <div className="absolute top-1 right-1 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => editarEsta(arte)} title="Editar esta arte"
-                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Wand2 size={12} /></button>
-                    <button onClick={() => baixarImagem(arte)} title="Baixar"
-                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-white"><Download size={12} /></button>
-                    <button onClick={() => excluirDoHistorico(arte)} title="Excluir do histórico"
-                      className="p-1.5 rounded-lg bg-black/70 text-gray-200 hover:text-red-400"><Trash2 size={12} /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-              )}
-            </div>
-            );
-          })}
-        </div>
-        </>)}
         {/* Aviso da limpeza automática (ver app/api/limpeza) */}
         <p className="shrink-0 border-t border-white/5 px-3 py-2 text-[10px] text-gray-600 text-center">
-          Artes ficam guardadas por 7 dias · conversas, neste navegador.
+          Conversas e artes ficam só neste navegador · baixe as artes que for usar.
         </p>
       </aside>
 
@@ -959,7 +765,7 @@ export default function GeradorPage() {
       {/* ===== TOPO ===== */}
       <header className="flex items-center gap-2 px-3 sm:px-4 h-14 shrink-0">
         {!lateralAberta && (
-          <button onClick={() => alternarLateral(true)} title="Conversas e artes"
+          <button onClick={() => alternarLateral(true)} title="Conversas"
             className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
             <PanelLeftOpen size={19} />
           </button>
@@ -1067,21 +873,15 @@ export default function GeradorPage() {
                       )}
                       {m.status === "gerando" && (
                         <div className="relative w-full max-w-[300px] aspect-[9/16] rounded-2xl overflow-hidden bg-white/[0.04] border border-white/10">
-                          {m.previa ? (
-                            /* Prévia da arte se formando */
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img src={m.previa} alt="Prévia da arte" className="absolute inset-0 w-full h-full object-cover" />
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
-                              <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
-                              <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">leva cerca de 1 minuto</span></p>
-                            </div>
-                          )}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+                            <Sparkles size={28} className="text-[#2563EB] animate-pulse" />
+                            <p className="text-sm text-gray-400 text-center">Criando a arte...<br /><span className="text-xs text-gray-600">leva cerca de 1 minuto</span></p>
+                          </div>
                           {/* Cronômetro + progresso */}
                           <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
                             <div className="flex items-center justify-between text-xs text-white mb-1.5">
                               <span className="flex items-center gap-1.5">
-                                <Loader2 size={12} className="animate-spin" /> {m.previa ? "Finalizando..." : "Gerando..."}
+                                <Loader2 size={12} className="animate-spin" /> Gerando...
                               </span>
                               {m.inicio && <span className="tabular-nums font-semibold">{segundos(tique - m.inicio)}</span>}
                             </div>
@@ -1118,6 +918,9 @@ export default function GeradorPage() {
                                 className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
                                 <Columns2 size={14} /> Comparar
                               </button>
+                            )}
+                            {m.arte.qualidade && (
+                              <span className="text-[11px] text-gray-500 px-1" title="Qualidade da imagem">{m.arte.qualidade === "medium" ? "Medium" : "Low"}</span>
                             )}
                             {m.arte.tempoMs !== undefined && (
                               <span className="flex items-center gap-1 text-[11px] text-gray-500 px-2" title="Tempo de geração">
