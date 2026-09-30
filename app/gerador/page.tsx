@@ -1129,7 +1129,7 @@ export default function GeradorPage() {
           <div className="w-full max-w-3xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-rogga.png" alt="Rogga Uniformes" width={640} height={210}
-              className="mx-auto mb-6 w-52 sm:w-64 h-auto" />
+              className="mx-auto mb-5 w-40 sm:w-48 h-auto" />
             <h1 className="text-center text-2xl sm:text-3xl font-semibold text-white mb-8">
               O que vamos criar hoje?
             </h1>
