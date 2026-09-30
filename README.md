@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gerador de Artes — Rogga Uniformes
 
-## Getting Started
+App interno em que os designers conversam com uma IA (estilo ChatGPT) para criar e editar
+propostas de uniformes a partir de uma arte de referência fixa.
 
-First, run the development server:
+- Produção: https://rogga-uniformes-15s9.vercel.app/gerador (pede a senha da equipe)
+- Publicação: todo `push` na branch `main` do GitHub publica sozinho na Vercel.
+
+## Como funciona
+
+1. O designer escreve o pedido e anexa o logo (ou cola um print).
+2. `/api/chat` (gpt-4.1-mini) conversa e decide: responder, **criar** uma arte nova ou
+   **editar** uma arte existente (e quais quadros a edição afeta).
+3. `/api/gerar` gera a imagem com `gpt-image-2` (cai para `gpt-image-1.5` se precisar),
+   com prévias em tempo real, e recola só os quadros de produto sobre a arte de
+   referência (`public/template.png`). Cabeçalho, etiquetas, bordas e rodapé nunca mudam.
+   - **Criação:** usa as regras rígidas (Configurações).
+   - **Edição:** usa as regras de edição (Configurações) + cores medidas na arte atual,
+     reenvia o logo original e só refaz os quadros citados; os outros saem pixel a pixel.
+4. A arte vai para o histórico da equipe (Vercel Blob privado), com miniatura para a galeria.
+
+## Onde fica cada coisa
+
+| Caminho | O quê |
+|---|---|
+| `app/gerador/page.tsx` | Tela principal (chat, barra lateral com Conversas e Artes) |
+| `app/gerador/componentes/` | Tela de senha, Configurações, Comparar e Tela cheia |
+| `app/gerador/regras.ts` | Textos padrão das regras rígidas e das regras de edição |
+| `app/gerador/utilidades.ts` | Funções auxiliares da tela |
+| `app/gerador/historico.ts` | Tipos e o armazenamento antigo do navegador (só para migração) |
+| `app/api/chat` | Conversa e decisão (criar / editar / responder) |
+| `app/api/gerar` | Geração da imagem, máscara dos quadros, medição de cores |
+| `app/api/artes` | Histórico de artes (listar, migrar, excluir, imagem e miniatura) |
+| `app/api/conversas` | Conversas da equipe (listar, abrir, salvar, renomear, apagar) |
+| `app/api/acesso` | Senha da equipe |
+| `app/api/limpeza` | Limpeza diária (Vercel Cron, `vercel.json`) |
+| `lib/` | Acesso/senha, armazenamento de artes e de conversas |
+
+## Variáveis de ambiente
+
+| Nome | Para quê |
+|---|---|
+| `OPENAI_API_KEY` | Geração de imagens e chat |
+| `TEAM_PASSWORD` | Senha da equipe (trocar desloga todo mundo) |
+| `BLOB_READ_WRITE_TOKEN` | Armazenamento privado das artes, logos e conversas |
+| `CRON_SECRET` | Autoriza a limpeza diária |
+| `IMAGE_MODEL` | (opcional) modelo de imagem; padrão `gpt-image-2` |
+| `LIMITE_GERACOES_HORA` | (opcional) limite de gerações por hora; padrão 60 |
+
+Para rodar localmente, copie as variáveis para `.env.local` e rode:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+node node_modules/next/dist/bin/next dev --webpack
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+(Use `--webpack`: o Turbopack falha nesta pasta por causa do caminho.)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Guarda dos dados
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Artes, miniaturas, logos sem uso e conversas sem atividade são apagados após **7 dias**
+pela limpeza diária (`app/api/limpeza`, todo dia às 06:00 UTC).

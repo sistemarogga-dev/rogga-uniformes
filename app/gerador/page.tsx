@@ -2,111 +2,21 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
-  Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
+  Download, Loader2, AlertCircle, X, Sparkles, Wand2,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen, Pencil, Columns2,
+  Search, CalendarDays, ChevronRight, Folder, FolderOpen, Timer, MessageSquare, PanelLeftOpen, Pencil, Columns2,
 } from "lucide-react";
 import {
   type ArteGerada, type Mensagem, type Conversa,
   listarArtes as listarArtesLocais, excluirArte as excluirArteLocal,
   listarConversas, excluirConversa,
 } from "./historico";
-
-// Miniatura das imagens anexadas (logos, prints) para guardar na conversa: o original
-// pode ter vários MB e a conversa inteira precisa caber no limite de envio da Vercel.
-const miniaturasCache = new Map<string, string>();
-async function miniatura(src: string): Promise<string> {
-  if (!src.startsWith("data:") || src.length < 60_000) return src;
-  const pronta = miniaturasCache.get(src);
-  if (pronta) return pronta;
-  try {
-    const img = new window.Image();
-    await new Promise<void>((ok, falha) => { img.onload = () => ok(); img.onerror = () => falha(); img.src = src; });
-    const escala = Math.min(1, 320 / Math.max(img.naturalWidth, img.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * escala));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * escala));
-    canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const mini = canvas.toDataURL("image/webp", 0.85); // webp mantém a transparência dos logos
-    miniaturasCache.set(src, mini);
-    return mini;
-  } catch {
-    return src;
-  }
-}
-async function mensagensLeves(msgs: Mensagem[]): Promise<Mensagem[]> {
-  return Promise.all(msgs.map(async (m) => (m.anexos?.length ? { ...m, anexos: await Promise.all(m.anexos.map(miniatura)) } : m)));
-}
-
-const segundos = (ms: number) => {
-  const s = Math.max(0, Math.round(ms / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s`;
-};
-
-interface ImagemEnviada {
-  id: string;
-  file: File;
-  preview: string;
-}
-
-
-// Regras rígidas padrão (editáveis em Configurações)
-// Regras de EDIÇÃO padrão (editáveis em Configurações). As informações que mudam a cada
-// arte — cores medidas, quadros que podem mudar, papel de cada imagem — o servidor
-// acrescenta sozinho.
-const REGRAS_EDICAO_PADRAO = `MODO EDIÇÃO — a arte final deve ser IDÊNTICA à arte atual, mudando SOMENTE o que o designer pediu.
-
-MANTER IDÊNTICO (a menos que o pedido diga o contrário):
-✅ Logomarcas: mesmo desenho, letras, cores, proporções e posições. Copie a logo do arquivo original enviado — nunca redesenhe, simplifique, traduza ou troque.
-✅ Cores de todos os produtos (use os códigos de cor medidos na arte atual).
-✅ Textos aplicados: telefones, nomes, sites e marcas nas mangas.
-✅ Modelos dos produtos: corte, gola, mangas, botões, formato da bag e do windbanner.
-✅ Fundos (imagens de contexto), posições e enquadramentos.
-
-REGRAS:
-1. Se o pedido não fala de cor, não mude nenhuma cor.
-2. Se o pedido não fala de logo, não mude nenhuma logo.
-3. Não acrescente nem remova nada que não foi pedido.
-4. Cada produto fica inteiro dentro do seu quadro, com folga das bordas, sem zoom e sem um produto sobrepor o outro.`;
-
-const REGRAS_PADRAO = `Use a PRIMEIRA imagem (arte de referência da Rogga) como base. Ela é um TEMPLATE FIXO e o resultado deve ser IDÊNTICO a ela.
-
-O QUE PODE MUDAR (SOMENTE ISSO):
-✅ Os produtos: polo piquet (frente e costas), camiseta (frente e costas), bag de cordão e windbanner — cores e aplicação da logomarca do cliente
-✅ As imagens de contexto (fundo fotográfico) atrás dos produtos, dentro de cada quadro
-
-O QUE NÃO PODE MUDAR:
-❌ Cabeçalho (ROGGA Uniformes, "PROPOSTA DE UNIFORMES" e o subtítulo)
-❌ Etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) e seus ícones
-❌ Bordas douradas, molduras, cantos arredondados e espaçamentos
-❌ Posição e tamanho dos 4 quadros
-❌ Rodapé (site, Instagram e "Atendimento para todo o Brasil")
-❌ Tipo, posição, tamanho, ângulo e enquadramento de cada produto
-
-REGRAS:
-1. Substituir cada "LOGO AQUI" pela logomarca enviada:
-- Polo e camiseta: peito esquerdo na frente e centralizada nas costas
-- Bag e windbanner: centralizada
-Retire o fundo dos logotipos anexados.
-
-2. Cores dos produtos escolhidas pela logomarca, pelo segmento e pela identidade visual do cliente. A polo e a camiseta devem ter cores diferentes entre si para gerar contraste.
-
-3. Polo: apenas 2 botões, sem listras e sem estampas na gola, carcela da mesma cor do tronco.
-
-4. Fundo de cada quadro: cenário fotográfico ligado ao ramo do cliente (ex: oficina → oficina premium; clínica → ambiente médico sofisticado; academia → academia premium; restaurante → cozinha gourmet; construção → obra moderna; transporte → centro logístico), com profundidade, desfoque natural, iluminação cinematográfica e aspecto premium. O fundo cobre 100% do quadro.
-
-5. Os produtos ficam totalmente nítidos em primeiro plano e os logotipos perfeitamente legíveis.
-
-6. Não criar nem remover áreas gráficas. O resultado deve parecer a arte de referência com apenas os produtos e os fundos trocados.`;
-
-const novoId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-const lerPreview = (f: File) =>
-  new Promise<string>((resolve) => {
-    const r = new FileReader();
-    r.onload = (e) => resolve(e.target?.result as string);
-    r.readAsDataURL(f);
-  });
+import { REGRAS_PADRAO, REGRAS_EDICAO_PADRAO } from "./regras";
+import TelaSenha from "./componentes/TelaSenha";
+import Configuracoes from "./componentes/Configuracoes";
+import Comparacao from "./componentes/Comparacao";
+import TelaCheia from "./componentes/TelaCheia";
+import { type ImagemEnviada, mensagensLeves, segundos, novoId, lerPreview } from "./utilidades";
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
@@ -127,7 +37,6 @@ export default function GeradorPage() {
   const [zoom, setZoom] = useState(1);
   // Lista percorrida pelas setas na tela cheia (a pasta da galeria ou as artes do chat)
   const [listaModal, setListaModal] = useState<ArteGerada[]>([]);
-  const toqueX = useRef<number | null>(null);
   const indiceModal = arteModal ? listaModal.findIndex((a) => a.timestamp === arteModal.timestamp) : -1;
   const abrirModal = (arte: ArteGerada, lista: ArteGerada[]) => {
     setArteModal(arte);
@@ -902,33 +811,8 @@ export default function GeradorPage() {
   // ─── Tela de senha da equipe ────────────────────────────────────────────────
   if (acesso !== "ok") {
     return (
-      <div className="flex h-dvh items-center justify-center bg-[#131317] px-4 text-gray-100">
-        {acesso === "verificando" ? (
-          <Loader2 size={22} className="animate-spin text-gray-500" />
-        ) : (
-          <form onSubmit={entrar} className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#1e1e24] p-6 space-y-4">
-            <div className="text-center space-y-1">
-              <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-[#2563EB]/15 flex items-center justify-center">
-                <Lock size={20} className="text-[#60A5FA]" />
-              </div>
-              <p className="flex items-center justify-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/simbolo-rogga.png" alt="Rogga" width={26} height={26} className="w-[26px] h-[26px]" />
-                <span className="text-[#60A5FA] font-semibold text-sm">Gerador de Artes</span>
-              </p>
-              <p className="text-xs text-gray-500">Digite a senha da equipe. Este navegador vai lembrar dela.</p>
-            </div>
-            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus
-              placeholder="Senha da equipe" autoComplete="current-password"
-              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#2563EB]" />
-            {erroSenha && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertCircle size={13} /> {erroSenha}</p>}
-            <button type="submit" disabled={!senha || entrando}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#2563EB] py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {entrando && <Loader2 size={15} className="animate-spin" />} Entrar
-            </button>
-          </form>
-        )}
-      </div>
+      <TelaSenha verificando={acesso === "verificando"} senha={senha} setSenha={setSenha}
+        erro={erroSenha} entrando={entrando} onEntrar={entrar} />
     );
   }
 
@@ -1320,155 +1204,28 @@ export default function GeradorPage() {
 
       {/* ===== CONFIGURAÇÕES ===== */}
       {configAberta && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setConfigAberta(false)}>
-          <div className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto bg-[#1e1e24] border border-white/10 rounded-2xl p-5 space-y-5"
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Configurações</h2>
-              <button onClick={() => setConfigAberta(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Qualidade da imagem</label>
-              <div className="grid grid-cols-2 gap-2">
-                {([["rapida", "Rápida", "mais rápida, ótima para aprovar"], ["maxima", "Máxima", "mais detalhe, demora mais"]] as const).map(([v, nome, desc]) => (
-                  <button key={v} onClick={() => setQualidade(v)}
-                    className={`py-2 px-3 rounded-xl border text-left transition-colors ${qualidade === v ? "border-[#2563EB] bg-[#2563EB]/10" : "border-white/10 hover:border-white/25"}`}>
-                    <span className={`block text-sm font-semibold ${qualidade === v ? "text-[#60A5FA]" : "text-gray-300"}`}>{nome}</span>
-                    <span className="block text-xs text-gray-500">{desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input type="checkbox" checked={usarMascara} onChange={(e) => setUsarMascara(e.target.checked)}
-                className="accent-[#2563EB] w-4 h-4 mt-0.5" />
-              <span className="text-sm text-gray-300">
-                Travar tudo, menos os produtos <span className="text-gray-500">(recomendado — protege cabeçalho, etiquetas, rodapé e bordas)</span>
-              </span>
-            </label>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-300">Regras rígidas <span className="font-normal text-gray-500">— criação de arte nova</span></p>
-                <button onClick={() => setRegras(REGRAS_PADRAO)}
-                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
-                  <RotateCcw size={12} /> Restaurar padrão
-                </button>
-              </div>
-              <p className="text-xs text-gray-500">Enviadas quando uma arte nova é criada. Ficam salvas neste navegador.</p>
-              <textarea value={regras} onChange={(e) => setRegras(e.target.value)} rows={14}
-                className="w-full border border-white/10 rounded-xl px-3 py-2 text-xs bg-black/20 text-gray-200 resize-y leading-relaxed focus:outline-none focus:border-white/25" />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-300">Regras de edição <span className="font-normal text-gray-500">— ao editar uma arte</span></p>
-                <button onClick={() => setRegrasEdicao(REGRAS_EDICAO_PADRAO)}
-                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
-                  <RotateCcw size={12} /> Restaurar padrão
-                </button>
-              </div>
-              <p className="text-xs text-gray-500">
-                Enviadas em toda edição, junto com o pedido do designer. O gerador acrescenta sozinho as cores medidas na arte,
-                os quadros que podem mudar e a logo original. Ficam salvas neste navegador.
-              </p>
-              <textarea value={regrasEdicao} onChange={(e) => setRegrasEdicao(e.target.value)} rows={14}
-                className="w-full border border-white/10 rounded-xl px-3 py-2 text-xs bg-black/20 text-gray-200 resize-y leading-relaxed focus:outline-none focus:border-white/25" />
-            </div>
-          </div>
-        </div>
+        <Configuracoes onFechar={() => setConfigAberta(false)}
+          qualidade={qualidade} setQualidade={setQualidade}
+          usarMascara={usarMascara} setUsarMascara={setUsarMascara}
+          regras={regras} setRegras={setRegras}
+          regrasEdicao={regrasEdicao} setRegrasEdicao={setRegrasEdicao} />
       )}
 
       {/* ===== COMPARAR ANTES / DEPOIS ===== */}
       {comparar && (
-        <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
-            <div className="flex-1 min-w-0 text-white">
-              <p className="text-sm font-semibold truncate">Comparar edição — {comparar.titulo}</p>
-              <p className="text-[11px] text-gray-400">À esquerda a versão anterior; à direita a editada.</p>
-            </div>
-            <button onClick={() => setComparar(null)} aria-label="Fechar comparação"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
-          </div>
-          <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-6">
-            <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-5xl mx-auto">
-              {([["Antes", comparar.antes], ["Depois", comparar.depois]] as const).map(([rotulo, src]) => (
-                <figure key={rotulo} className="space-y-2">
-                  <figcaption className={`text-center text-xs font-semibold ${rotulo === "Depois" ? "text-[#60A5FA]" : "text-gray-400"}`}>{rotulo}</figcaption>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`Arte ${rotulo.toLowerCase()} da edição`} className="w-full rounded-xl border border-white/10" />
-                </figure>
-              ))}
-            </div>
-          </div>
-        </div>
+        <Comparacao antes={comparar.antes} depois={comparar.depois} titulo={comparar.titulo} onFechar={() => setComparar(null)} />
       )}
 
       {/* ===== TELA CHEIA (com navegação entre as artes) ===== */}
       {arteModal && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-          onTouchStart={(e) => { toqueX.current = e.touches[0].clientX; }}
-          onTouchEnd={(e) => {
-            if (toqueX.current === null || zoom !== 1) return;
-            const dx = e.changedTouches[0].clientX - toqueX.current;
-            if (Math.abs(dx) > 50) navegarModal(dx < 0 ? 1 : -1);
-            toqueX.current = null;
-          }}>
-          <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-white/10">
-            <div className="flex-1 min-w-0 text-white">
-              <p className="text-sm font-semibold truncate">{arteModal.logomarca}</p>
-              <p className="text-[11px] text-gray-400">
-                {nomePasta(chaveDia(arteModal.timestamp))} · {hora(arteModal.timestamp)}
-                {listaModal.length > 1 && ` · ${indiceModal + 1} de ${listaModal.length}`}
-              </p>
-            </div>
-            <button onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.25).toFixed(2)))}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomOut size={18} /></button>
-            <span className="text-white text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><ZoomIn size={18} /></button>
-            <button onClick={() => { editarEsta(arteModal); setArteModal(null); }}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">
-              <Wand2 size={14} /> Editar
-            </button>
-            {antesDe(arteModal) && (
-              <button onClick={() => abrirComparacao(arteModal)} title="Ver a versão anterior ao lado"
-                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">
-                <Columns2 size={14} /> Comparar
-              </button>
-            )}
-            <button onClick={() => baixarImagem(arteModal)}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold">
-              <Download size={14} /> Baixar
-            </button>
-            <button onClick={() => setArteModal(null)}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
-          </div>
-          <div className="relative flex-1 min-h-0">
-            <div className="h-full overflow-auto flex items-start justify-center p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={arteModal.url} alt="Arte gerada"
-                style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform 0.2s" }}
-                className="max-w-sm w-full" />
-            </div>
-            {listaModal.length > 1 && (
-              <>
-                <button onClick={() => navegarModal(-1)} disabled={indiceModal <= 0} title="Anterior (←)" aria-label="Arte anterior"
-                  className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20 disabled:hover:bg-white/10 transition-colors">
-                  <ChevronLeft size={26} />
-                </button>
-                <button onClick={() => navegarModal(1)} disabled={indiceModal >= listaModal.length - 1} title="Próxima (→)" aria-label="Próxima arte"
-                  className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20 disabled:hover:bg-white/10 transition-colors">
-                  <ChevronRight size={26} />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+        <TelaCheia arte={arteModal}
+          legenda={`${nomePasta(chaveDia(arteModal.timestamp))} · ${hora(arteModal.timestamp)}`}
+          indice={indiceModal} total={listaModal.length}
+          zoom={zoom} setZoom={setZoom} onNavegar={navegarModal}
+          onFechar={() => setArteModal(null)}
+          onEditar={() => { editarEsta(arteModal); setArteModal(null); }}
+          onComparar={antesDe(arteModal) ? () => abrirComparacao(arteModal) : undefined}
+          onBaixar={() => baixarImagem(arteModal)} />
       )}
     </div>
   );
