@@ -12,14 +12,6 @@ import {
   listarConversas, excluirConversa,
 } from "./historico";
 
-// Ajustes de um clique embaixo de cada arte (editam a arte direto, sem passar pelo chat)
-const AJUSTES_RAPIDOS = [
-  { rotulo: "Trocar cores", prompt: "Troque as cores dos produtos por outra combinação que combine com a logomarca e o ramo do cliente, mantendo a polo e a camiseta com cores diferentes entre si. Mantenha todo o resto igual." },
-  { rotulo: "Trocar fundos", prompt: "Troque as imagens de contexto (fundos) de todos os quadros por outro cenário fotográfico do mesmo ramo do cliente. Mantenha os produtos, cores e logos exatamente iguais." },
-  { rotulo: "Logo maior", prompt: "Aumente um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada e legível. Não mexa na logo do peito. Mantenha todo o resto igual." },
-  { rotulo: "Logo menor", prompt: "Diminua um pouco a logomarca nas costas das camisas, na bag e no windbanner, mantendo-a centralizada. Não mexa na logo do peito. Mantenha todo o resto igual." },
-];
-
 // Miniatura das imagens anexadas (logos, prints) para guardar na conversa: o original
 // pode ter vários MB e a conversa inteira precisa caber no limite de envio da Vercel.
 const miniaturasCache = new Map<string, string>();
@@ -57,12 +49,6 @@ interface ImagemEnviada {
   preview: string;
 }
 
-
-const SUGESTOES = [
-  "Crie uma arte com o logo em anexo, cores automáticas pelo ramo da empresa",
-  "Polo azul-marinho, camiseta branca e fundos de escritório moderno",
-  "Me dê 3 ideias de combinação de cores para uma oficina mecânica",
-];
 
 // Regras rígidas padrão (editáveis em Configurações)
 const REGRAS_PADRAO = `Use a PRIMEIRA imagem (arte de referência da Rogga) como base. Ela é um TEMPLATE FIXO e o resultado deve ser IDÊNTICO a ela.
@@ -441,10 +427,11 @@ export default function GeradorPage() {
   const atualizarMsg = (id: string, dados: Partial<Mensagem>) =>
     setMensagens((prev) => prev.map((m) => (m.id === id ? { ...m, ...dados } : m)));
 
-  // ajuste: edição de um clique numa arte (pula o chat e edita direto essa arte)
-  const enviar = useCallback(async (textoForcado?: string, ajuste?: { arte: ArteGerada; rotulo: string }) => {
+  // reenvio: mensagem editada — refaz a conversa a partir dela (as seguintes saem)
+  const enviar = useCallback(async (textoForcado?: string, reenvio?: { antes: Mensagem[]; anexos: ImagemEnviada[] }) => {
+    const anexosEnviados = reenvio ? reenvio.anexos : imagens;
     const conteudo = (textoForcado ?? texto).trim();
-    if ((!conteudo && imagens.length === 0) || ocupado) return;
+    if ((!conteudo && anexosEnviados.length === 0) || ocupado) return;
 
     // Primeira mensagem de uma conversa nova: cria a conversa no histórico
     if (!conversaIdRef.current) {
@@ -452,17 +439,16 @@ export default function GeradorPage() {
       setConversaId(conversaIdRef.current);
     }
 
-    const anexosEnviados = ajuste ? [] : imagens;
     const inicio = Date.now();
     const userMsg: Mensagem = {
       id: novoId(), papel: "user",
-      texto: ajuste ? `${ajuste.rotulo} (${ajuste.arte.logomarca})` : conteudo || "Crie uma arte com as imagens em anexo.",
+      texto: conteudo || "Crie uma arte com as imagens em anexo.",
       anexos: anexosEnviados.map((i) => i.preview),
     };
     const respId = novoId();
-    const historico = [...mensagens, userMsg];
+    const historico = [...(reenvio ? reenvio.antes : mensagens), userMsg];
     setMensagens([...historico, { id: respId, papel: "assistant", texto: "", status: "pensando", inicio }]);
-    if (!ajuste) { setTexto(""); setImagens([]); }
+    if (!reenvio) { setTexto(""); setImagens([]); }
     setAviso("");
     setOcupado(true);
 
@@ -470,11 +456,9 @@ export default function GeradorPage() {
     abortRef.current = controller;
 
     try {
-      // 1) Conversa: o assistente responde ou decide gerar/editar (ajuste rápido pula)
+      // 1) Conversa: o assistente responde ou decide gerar/editar
       let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean };
-      if (ajuste) {
-        chat = { tipo: "arte", modo: "editar", prompt: conteudo, texto: `Aplicando "${ajuste.rotulo}"...` };
-      } else {
+      {
         const resChat = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -499,7 +483,7 @@ export default function GeradorPage() {
       }
 
       // 2) Geração da arte
-      const editando = ajuste ? ajuste.arte : chat.modo === "editar" ? baseArte : null;
+      const editando = chat.modo === "editar" ? baseArte : null;
       atualizarMsg(respId, { texto: chat.texto || "", status: "gerando" });
       setGerandoImagem(true);
 
@@ -572,6 +556,27 @@ export default function GeradorPage() {
   }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, qualidade]);
 
   const parar = () => abortRef.current?.abort();
+
+  // ─── Editar mensagem já enviada (como no ChatGPT) ─────────────────────────────
+  const [editandoMsgId, setEditandoMsgId] = useState<string | null>(null);
+  const [textoEdicaoMsg, setTextoEdicaoMsg] = useState("");
+  const comecarEditarMsg = (m: Mensagem) => { setEditandoMsgId(m.id); setTextoEdicaoMsg(m.texto); };
+  const salvarEdicaoMsg = async (m: Mensagem) => {
+    const novo = textoEdicaoMsg.trim();
+    setEditandoMsgId(null);
+    if (!novo || ocupado) return;
+    const i = mensagens.findIndex((x) => x.id === m.id);
+    if (i < 0) return;
+    const antes = mensagens.slice(0, i);
+    // Anexos da mensagem vão de novo (recriados a partir das imagens guardadas)
+    const anexos: ImagemEnviada[] = await Promise.all((m.anexos || []).map(async (src, k) => {
+      const blob = await (await fetch(src)).blob();
+      return { id: novoId(), file: new File([blob], `anexo-${k + 1}.${blob.type.split("/")[1] || "png"}`, { type: blob.type }), preview: src };
+    }));
+    // Se a arte em edição estava depois da mensagem editada, ela sai da conversa
+    if (baseArte && !antes.some((x) => x.arte?.timestamp === baseArte.timestamp)) setBaseArte(null);
+    enviar(novo, { antes, anexos });
+  };
 
   const novaConversa = () => {
     if (ocupado) parar();
@@ -1077,14 +1082,6 @@ export default function GeradorPage() {
               O que vamos criar hoje?
             </h1>
             {composer}
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {SUGESTOES.map((s) => (
-                <button key={s} onClick={() => setTexto(s)}
-                  className="text-xs sm:text-sm text-gray-400 border border-white/10 rounded-full px-3.5 py-1.5 hover:bg-white/5 hover:text-gray-200 transition-colors">
-                  {s}
-                </button>
-              ))}
-            </div>
           </div>
         </main>
       ) : (
@@ -1103,9 +1100,39 @@ export default function GeradorPage() {
                         ))}
                       </div>
                     )}
-                    <div className="max-w-[85%] bg-[#2a2a31] rounded-3xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
-                      {m.texto}
-                    </div>
+                    {editandoMsgId === m.id ? (
+                      <div className="w-full max-w-[85%] rounded-3xl bg-[#2a2a31] border border-white/15 p-3 space-y-2">
+                        <textarea value={textoEdicaoMsg} autoFocus rows={3} aria-label="Editar mensagem"
+                          onChange={(e) => setTextoEdicaoMsg(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); salvarEdicaoMsg(m); }
+                            else if (e.key === "Escape") setEditandoMsgId(null);
+                          }}
+                          className="w-full bg-transparent px-1 text-[15px] leading-relaxed text-gray-100 resize-y focus:outline-none" />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditandoMsgId(null)}
+                            className="rounded-full px-3.5 py-1.5 text-xs font-semibold text-gray-300 bg-white/10 hover:bg-white/15 transition-colors">
+                            Cancelar
+                          </button>
+                          <button onClick={() => salvarEdicaoMsg(m)} disabled={!textoEdicaoMsg.trim()}
+                            className="rounded-full px-3.5 py-1.5 text-xs font-semibold text-black bg-white hover:bg-gray-200 disabled:opacity-40 transition-colors">
+                            Enviar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="group flex items-center gap-1.5 max-w-[85%]">
+                        {!ocupado && (
+                          <button onClick={() => comecarEditarMsg(m)} title="Editar mensagem"
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                        <div className="bg-[#2a2a31] rounded-3xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
+                          {m.texto}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div key={m.id} className="flex gap-3">
@@ -1178,16 +1205,6 @@ export default function GeradorPage() {
                                 <Timer size={12} /> {segundos(m.arte.tempoMs)}
                               </span>
                             )}
-                          </div>
-                          {/* Ajustes rápidos: editam esta arte com um clique */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {AJUSTES_RAPIDOS.map((a) => (
-                              <button key={a.rotulo} disabled={ocupado}
-                                onClick={() => enviar(a.prompt, { arte: m.arte!, rotulo: a.rotulo })}
-                                className="text-[11px] text-gray-400 border border-white/10 rounded-full px-2.5 py-1 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:border-white/10 transition-colors">
-                                {a.rotulo}
-                              </button>
-                            ))}
                           </div>
                           <div>
                             <details className="text-xs text-gray-500 w-full">

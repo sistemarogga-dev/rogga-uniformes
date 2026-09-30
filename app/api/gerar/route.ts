@@ -118,27 +118,33 @@ export async function POST(request: Request) {
     return Response.json({ error: "Escreva o prompt da arte que deseja gerar." }, { status: 400 });
   }
 
-  // Imagem-base: a arte em edição OU o template fixo.
-  let rawTemplate: Buffer | null = null;
-  if (basePath && caminhoValido(basePath)) rawTemplate = await bufferDaArte(basePath).catch(() => null);
-  else if (baseImage?.startsWith("data:")) rawTemplate = Buffer.from(baseImage.split(",")[1], "base64");
-  const editando = !!rawTemplate;
-  if (!rawTemplate) {
-    const templatePath = path.join(process.cwd(), "public", "template.png");
-    if (!fs.existsSync(templatePath)) {
-      return Response.json({ error: "Template não encontrado. Salve o arquivo template.png na pasta public." }, { status: 500 });
-    }
-    rawTemplate = fs.readFileSync(templatePath);
+  // A BASE é sempre a arte de referência limpa: ela é o molde do layout e das posições
+  // e tamanhos dos produtos. Na edição, a arte atual vai como SEGUNDA imagem (só para
+  // copiar cores, logos, textos e fundos). Antes a arte atual era a base, e a cada
+  // edição a IA "aproximava" um pouco os produtos — eles cresciam, encostavam nas
+  // bordas dos quadros e começavam a se sobrepor.
+  let arteAtual: Buffer | null = null;
+  if (basePath && caminhoValido(basePath)) arteAtual = await bufferDaArte(basePath).catch(() => null);
+  else if (baseImage?.startsWith("data:")) arteAtual = Buffer.from(baseImage.split(",")[1], "base64");
+  const editando = !!arteAtual;
+  const templatePath = path.join(process.cwd(), "public", "template.png");
+  if (!fs.existsSync(templatePath)) {
+    return Response.json({ error: "Template não encontrado. Salve o arquivo template.png na pasta public." }, { status: 500 });
   }
-  const base = rawTemplate;
+  const base = fs.readFileSync(templatePath);
+
+  const regraEnquadramento = `- Cada produto fica INTEIRO dentro do seu quadro, com folga das bordas, exatamente na posição e no tamanho da arte de referência: nada cortado pelas bordas dos quadros, sem aproximar (zoom) e sem um produto sobrepor o outro.`;
 
   // Monta o prompt final = regras rígidas + instruções desta arte
   const notaFresca = editando
     ? `
 MODO EDIÇÃO (MUITO IMPORTANTE):
-- A primeira imagem é a arte atual. Altere SOMENTE o que foi pedido acima.
-- Todo o resto permanece IDÊNTICO: mesmos modelos de produto (corte, gola, mangas, botões, formato da bag e do windbanner), mesmas cores, mesmos logos, mesmos fundos, mesmas posições e enquadramentos.`
+- A PRIMEIRA imagem é a arte de referência da Rogga: ela define o layout e as posições, tamanhos e enquadramentos de cada produto. A SEGUNDA imagem é a arte atual deste cliente.
+- Recrie a arte atual — mesmos modelos de produto (corte, gola, mangas, botões, formato da bag e do windbanner), mesmas cores, mesmas logomarcas e textos aplicados, mesmos fundos — aplicando SOMENTE a alteração pedida acima.
+${regraEnquadramento}`
     : `
+${regraEnquadramento}`;
+  const notaNova = editando ? "" : `
 GEOMETRIA OBRIGATÓRIA (NÃO DESLOCAR NADA):
 - A primeira imagem é a ARTE DE REFERÊNCIA da Rogga. O resultado deve ser IDÊNTICO a ela em layout: cabeçalho, título, subtítulo, bordas douradas, etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) e rodapé permanecem exatamente iguais.
 - Os QUATRO quadros de produto têm posição e tamanho FIXOS: POLO PIQUET (quadro largo no topo), CAMISETA (meio à esquerda), BAGA PERSONALIZADA (embaixo à esquerda) e WINDBANNER (quadro alto à direita). Pinte SOMENTE dentro deles, sem ultrapassar as bordas.
@@ -154,6 +160,7 @@ O QUE MUDA (E SOMENTE ISSO):
     regras.trim(),
     regras.trim() ? "\nINSTRUÇÕES DESTA ARTE:" : "",
     promptUser.trim(),
+    notaNova,
     notaFresca,
   ].filter(Boolean).join("\n").trim();
 
@@ -227,8 +234,13 @@ O QUE MUDA (E SOMENTE ISSO):
   const gerarImagem = async (modelo: string, stream: boolean, onParcial: (b: Buffer) => void) => {
     const { w, h } = tamanhoDe(modelo);
     const baseRedim = await sharp(base).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+    // Ordem: 1ª referência (molde do layout), 2ª arte atual (só na edição), depois anexos
+    const atualRedim = arteAtual
+      ? await sharp(arteAtual).resize(w, h, { fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer()
+      : null;
     const files = await Promise.all([
       toFile(baseRedim, "template.png", { type: "image/png" }),
+      ...(atualRedim ? [toFile(atualRedim, "arte-atual.png", { type: "image/png" })] : []),
       ...anexos.map((a, i) => toFile(a.buffer, `imagem-${i + 1}.png`, { type: a.type })),
     ]);
     const params = {
