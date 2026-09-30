@@ -13,6 +13,9 @@ export interface ArteGerada {
   timestamp: number;
   caminho?: string; // arte salva no histórico compartilhado (pathname no Blob)
   tempoMs?: number; // quanto tempo a geração levou
+  logos?: string[]; // ids dos arquivos de logo originais (reenviados nas edições)
+  anterior?: number; // timestamp da arte que foi editada para gerar esta
+  antes?: string; // endereço da versão anterior (botão "Comparar")
 }
 
 export interface Mensagem {

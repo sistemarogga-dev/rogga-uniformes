@@ -3,7 +3,9 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import { exigirAcesso, passouDoLimite } from "@/lib/acesso";
-import { bufferDaArte, caminhoValido, salvarArteNuvem, type ArteSalva } from "@/lib/artes";
+import {
+  bufferDaArte, bufferDoLogo, caminhoValido, logoIdValido, salvarArteNuvem, salvarLogoNuvem, type ArteSalva,
+} from "@/lib/artes";
 
 export const dynamic = "force-dynamic";
 // A geração de imagem pode passar de 1 minuto em qualidade alta.
@@ -22,11 +24,37 @@ export const maxDuration = 300;
 // tab = [x do topo da diagonal, x da base da diagonal, y da base da etiqueta].
 const REF_W = 900, REF_H = 1600;
 const ZONAS = [
-  { x0: 23, y0: 255, x1: 880, y1: 717, tab: [248, 215, 302] },   // POLO PIQUET
-  { x0: 23, y0: 737, x1: 463, y1: 1058, tab: [218, 188, 782] },  // CAMISETA
-  { x0: 483, y0: 737, x1: 880, y1: 1396, tab: [698, 668, 782] }, // WINDBANNER
-  { x0: 23, y0: 1079, x1: 463, y1: 1396, tab: [328, 298, 1126] }, // BAGA PERSONALIZADA
+  { nome: "polo", rotulo: "POLO PIQUET", x0: 23, y0: 255, x1: 880, y1: 717, tab: [248, 215, 302] },
+  { nome: "camiseta", rotulo: "CAMISETA", x0: 23, y0: 737, x1: 463, y1: 1058, tab: [218, 188, 782] },
+  { nome: "windbanner", rotulo: "WINDBANNER", x0: 483, y0: 737, x1: 880, y1: 1396, tab: [698, 668, 782] },
+  { nome: "bag", rotulo: "BAGA PERSONALIZADA", x0: 23, y0: 1079, x1: 463, y1: 1396, tab: [328, 298, 1126] },
 ];
+
+// Pontos do corpo de cada produto (coordenadas da referência 900x1600, longe das logos)
+// onde a cor é medida na arte atual antes de uma edição.
+const PONTOS_COR: Array<{ produto: string; x: number; y: number }> = [
+  { produto: "polo (frente)", x: 200, y: 610 },
+  { produto: "polo (costas)", x: 560, y: 640 },
+  { produto: "camiseta (frente)", x: 95, y: 990 },
+  { produto: "camiseta (costas)", x: 300, y: 1005 },
+  { produto: "windbanner", x: 700, y: 880 },
+  { produto: "bag", x: 215, y: 1205 },
+];
+
+/** Cor de cada produto na arte atual (mediana de um quadradinho em cada ponto). */
+async function medirCores(arte: Buffer): Promise<string> {
+  const { data } = await sharp(arte).resize(REF_W, REF_H, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const hex = (n: number) => n.toString(16).padStart(2, "0");
+  return PONTOS_COR.map(({ produto, x, y }) => {
+    const canais: number[][] = [[], [], []];
+    for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+      const i = ((y + dy) * REF_W + (x + dx)) * 3;
+      for (let k = 0; k < 3; k++) canais[k].push(data[i + k]);
+    }
+    const med = canais.map((v) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)]);
+    return `${produto} #${med.map(hex).join("").toUpperCase()}`;
+  }).join(", ");
+}
 
 /**
  * Formato EXATO das etiquetas (POLO PIQUET etc.), lido pixel a pixel da arte de
@@ -65,10 +93,11 @@ function formatoDasEtiquetas(): Promise<Buffer> {
 }
 
 /** Máscara KEEP (branco = quadros de produto, menos as etiquetas) no tamanho da base. */
-async function mascaraDosQuadros(tW: number, tH: number) {
+async function mascaraDosQuadros(tW: number, tH: number, quadros: string[] = ZONAS.map((z) => z.nome)) {
   const sx = tW / REF_W, sy = tH / REF_H;
   const rad = Math.round(12 * sx); // cantos arredondados iguais aos dos quadros
   const keepRects = ZONAS
+    .filter((z) => quadros.includes(z.nome))
     .map((z) => {
       const x = Math.round(z.x0 * sx), y = Math.round(z.y0 * sy);
       const w = Math.round((z.x1 - z.x0) * sx), h = Math.round((z.y1 - z.y0) * sy);
@@ -113,6 +142,10 @@ export async function POST(request: Request) {
   const basePath = (formData.get("basePath") as string) || "";
   const baseImage = formData.get("baseImage") as string | null;
   const logomarcaBase = ((formData.get("logomarcaBase") as string) || "").slice(0, 60);
+  // Edição: regras de edição (Configurações), quadros que podem mudar e logos originais
+  const regrasEdicao = (formData.get("regrasEdicao") as string) || "";
+  const quadrosPedidos = ((formData.get("quadros") as string) || "").split(",").filter((q) => ZONAS.some((z) => z.nome === q));
+  const logosAnteriores = ((formData.get("logos") as string) || "").split(",").filter(logoIdValido).slice(0, 4);
 
   if (!promptUser.trim()) {
     return Response.json({ error: "Escreva o prompt da arte que deseja gerar." }, { status: 400 });
@@ -135,12 +168,21 @@ export async function POST(request: Request) {
 
   const regraEnquadramento = `- Cada produto fica INTEIRO dentro do seu quadro, com folga das bordas, exatamente na posição e no tamanho da arte de referência: nada cortado pelas bordas dos quadros, sem aproximar (zoom) e sem um produto sobrepor o outro.`;
 
-  // Monta o prompt final = regras rígidas + instruções desta arte
+  // Edição: só os quadros pedidos mudam; os outros vêm da arte atual pixel a pixel
+  const quadros = editando && quadrosPedidos.length ? quadrosPedidos : ZONAS.map((z) => z.nome);
+  const anterior = basePath ? Number(basePath.match(/^artes\/(\d+)__/)?.[1]) || undefined : undefined;
+  const logosOriginais = editando
+    ? (await Promise.all(logosAnteriores.map((id) => bufferDoLogo(id).catch(() => null)))).filter((b): b is Buffer => !!b)
+    : [];
+  const cores = arteAtual ? await medirCores(arteAtual).catch(() => "") : "";
+
+  // Informações automáticas da edição (mudam a cada arte, por isso não ficam nas Configurações)
   const notaFresca = editando
     ? `
-MODO EDIÇÃO (MUITO IMPORTANTE):
-- A PRIMEIRA imagem é a arte de referência da Rogga: ela define o layout e as posições, tamanhos e enquadramentos de cada produto. A SEGUNDA imagem é a arte atual deste cliente.
-- Recrie a arte atual — mesmos modelos de produto (corte, gola, mangas, botões, formato da bag e do windbanner), mesmas cores, mesmas logomarcas e textos aplicados, mesmos fundos — aplicando SOMENTE a alteração pedida acima.
+INFORMAÇÕES DESTA EDIÇÃO (automáticas):
+- 1ª imagem: arte de referência da Rogga — serve SÓ como molde de posições, tamanhos e enquadramentos dos produtos. NÃO copie dela cores, logos, textos nem fundos.
+- 2ª imagem: a ARTE ATUAL deste cliente — é dela que vêm as cores, as logos, os textos e os FUNDOS (imagens de contexto) de cada quadro. Mantenha tudo idêntico a ela, inclusive o fundo, a menos que o pedido mande trocar.${logosOriginais.length ? ` Imagens 3 em diante: os arquivos ORIGINAIS da logomarca do cliente — copie a logo exatamente destes arquivos, sem redesenhar, simplificar ou trocar nada.` : ""}
+${cores ? `- Cores medidas na arte atual (mantenha exatamente, a menos que o pedido mude a cor): ${cores}.\n` : ""}- Quadros que podem mudar nesta edição: ${ZONAS.filter((z) => quadros.includes(z.nome)).map((z) => z.rotulo).join(", ")}. Nos demais quadros não mude nada.
 ${regraEnquadramento}`
     : `
 ${regraEnquadramento}`;
@@ -156,18 +198,24 @@ O QUE MUDA (E SOMENTE ISSO):
    - Nas camisas, a logo da FRENTE é pequena, no peito esquerdo (do mesmo tamanho do "LOGO AQUI" da referência); a das COSTAS é grande e centralizada.
 2. As IMAGENS DE CONTEXTO atrás dos produtos: novo cenário fotográfico ligado ao ramo do cliente, cobrindo 100% de cada quadro, com profundidade, desfoque natural e luz premium. Os produtos ficam nítidos em primeiro plano.
 - Não reaproveite as cores e os fundos da referência; crie a versão do cliente.`;
+  // Criação: regras rígidas + pedido. Edição: regras de edição + pedido (as regras
+  // rígidas mandam escolher cores pela logomarca, o que contradiz "manter idêntico").
+  const regrasUsadas = (editando ? regrasEdicao : regras).trim();
   const editPrompt = [
-    regras.trim(),
-    regras.trim() ? "\nINSTRUÇÕES DESTA ARTE:" : "",
+    regrasUsadas,
+    regrasUsadas ? (editando ? "\nPEDIDO DO DESIGNER (altere SOMENTE isto):" : "\nINSTRUÇÕES DESTA ARTE:") : "",
     promptUser.trim(),
     notaNova,
     notaFresca,
   ].filter(Boolean).join("\n").trim();
 
-  const meta = await sharp(base).metadata();
+  // Camada de baixo da composição: na criação, a referência; na edição, a ARTE ATUAL
+  // no tamanho original — assim os quadros que não mudam saem idênticos, pixel a pixel.
+  const camadaBase = arteAtual ?? base;
+  const meta = await sharp(camadaBase).metadata();
   const tW = meta.width ?? 900;
   const tH = meta.height ?? 1600;
-  const keepPng = usarMascara ? await mascaraDosQuadros(tW, tH) : null;
+  const keepPng = usarMascara || editando ? await mascaraDosQuadros(tW, tH, quadros) : null;
 
   // Recola SÓ os quadros de produto da arte gerada sobre a base. Assim cabeçalho,
   // etiquetas, bordas e rodapé ficam pixel-perfeito iguais ao original.
@@ -176,7 +224,7 @@ O QUE MUDA (E SOMENTE ISSO):
     let composto = cheio;
     if (keepPng) {
       const overlay = await sharp(cheio).ensureAlpha().composite([{ input: keepPng, blend: "dest-in" }]).png().toBuffer();
-      composto = await sharp(base).composite([{ input: overlay }]).png().toBuffer();
+      composto = await sharp(camadaBase).composite([{ input: overlay }]).png().toBuffer();
     }
     return sharp(composto)
       .resize(saida.w, saida.h, { fit: "fill", kernel: sharp.kernel.lanczos3 })
@@ -241,8 +289,9 @@ O QUE MUDA (E SOMENTE ISSO):
     const files = await Promise.all([
       toFile(baseRedim, "template.png", { type: "image/png" }),
       ...(atualRedim ? [toFile(atualRedim, "arte-atual.png", { type: "image/png" })] : []),
+      ...logosOriginais.map((b, i) => toFile(b, `logo-original-${i + 1}.png`, { type: "image/png" })),
       ...anexos.map((a, i) => toFile(a.buffer, `imagem-${i + 1}.png`, { type: a.type })),
-    ]);
+    ].slice(0, 16));
     const params = {
       model: modelo,
       image: files.length === 1 ? files[0] : files,
@@ -309,14 +358,20 @@ O QUE MUDA (E SOMENTE ISSO):
 
         // Redimensiona para 1080x1920 (9:16). JPEG de alta qualidade para caber no
         // limite de ~4,5 MB por resposta da Vercel (um PNG passaria disso).
-        const finalImg = await compor(imageBuffer, { w: 1080, h: 1920, q: 92 });
+        const finalImg = await compor(imageBuffer, { w: 1080, h: 1920, q: 94 });
         const logomarca = anexos.length ? analise.logomarca : (logomarcaBase || analise.logomarca);
         const timestamp = Date.now();
+
+        // Guarda os anexos originais (logos) para as próximas edições desta arte
+        const logosNovos = (await Promise.all(
+          anexos.slice(0, 4).map((a, i) => salvarLogoNuvem(a.buffer, `${timestamp}-${i}`).catch(() => null)),
+        )).filter((id): id is string => !!id);
+        const logos = [...logosAnteriores, ...logosNovos].slice(0, 4);
 
         // Salva no histórico compartilhado. Se falhar, a arte ainda chega ao designer.
         let arte: ArteSalva | null = null;
         try {
-          arte = await salvarArteNuvem(finalImg, { timestamp, logomarca, vendedor });
+          arte = await salvarArteNuvem(finalImg, { timestamp, logomarca, vendedor, logos, anterior });
         } catch (e) {
           console.error("[gerar] não salvou no histórico:", (e as Error).message);
         }
@@ -330,6 +385,8 @@ O QUE MUDA (E SOMENTE ISSO):
           tempoMs: Date.now() - inicio,
           timestamp,
           arte,
+          logos,
+          anterior,
         });
       } catch (err: unknown) {
         enviar({ tipo: "erro", error: err instanceof Error ? err.message : "Erro desconhecido." });

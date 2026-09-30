@@ -27,7 +27,8 @@ Quando usar:
 
 Como escrever o "prompt" das ferramentas:
 - gerar_arte: prompt DETALHADO em português, bem estruturado: cores de cada produto (polo, camiseta, bag e windbanner — combinação pela logomarca/ramo, com cores diferentes entre polo e camiseta para contraste), logo no peito esquerdo e centralizado nas costas das camisas e centralizado na bag e no windbanner, retirar o fundo dos logotipos anexados, e o cenário de fundo de cada quadro ligado ao ramo da empresa. Não repita regras gerais do template (botões da polo, preservar cabeçalho/rodapé).
-- editar_arte: descreva SOMENTE a mudança pedida, de forma clara, e diga para manter todo o resto exatamente igual.
+- editar_arte: descreva SOMENTE a mudança pedida, de forma clara, e diga para manter todo o resto exatamente igual. Nunca invente mudanças de cor ou de logo que o usuário não pediu.
+- editar_arte, campo "quadros": liste SOMENTE os quadros que a mudança afeta — "polo", "camiseta", "bag", "windbanner". Os outros quadros são copiados da arte atual sem nenhuma alteração. Ex: "troque o fundo do windbanner" → ["windbanner"]; "polo verde" → ["polo"]; "troque os fundos" ou "logo maior em tudo" → os 4; mudança na logo/cor da marca em todos os produtos → os 4. Na dúvida, inclua o quadro.
 - Considere o histórico: pedidos anteriores continuam valendo, a não ser que o usuário mude.
 
 O campo "mensagem" é o que aparece para o usuário no chat enquanto a arte é gerada: 1 frase curta (ex: "Beleza! Vou deixar a polo azul-marinho e manter o resto.").`;
@@ -58,8 +59,13 @@ const ferramentas: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         properties: {
           prompt: { type: "string", description: "Somente a alteração pedida, mantendo o resto igual." },
           mensagem: { type: "string", description: "Frase curta para o usuário." },
+          quadros: {
+            type: "array",
+            items: { type: "string", enum: ["polo", "camiseta", "bag", "windbanner"] },
+            description: "Somente os quadros afetados pela mudança. Os outros ficam idênticos.",
+          },
         },
-        required: ["prompt", "mensagem"],
+        required: ["prompt", "mensagem", "quadros"],
       },
     },
   },
@@ -103,11 +109,14 @@ export async function POST(request: Request) {
     const call = msg?.tool_calls?.find((c) => c.type === "function");
 
     if (call && call.type === "function") {
-      const args = JSON.parse(call.function.arguments || "{}") as { prompt?: string; mensagem?: string };
+      const args = JSON.parse(call.function.arguments || "{}") as { prompt?: string; mensagem?: string; quadros?: string[] };
       const modo = call.function.name === "editar_arte" && temArte ? "editar" : "nova";
+      const validos = ["polo", "camiseta", "bag", "windbanner"];
+      const quadros = (args.quadros || []).filter((q) => validos.includes(q));
       return Response.json({
         tipo: "arte",
         modo,
+        quadros: modo === "editar" && quadros.length ? quadros : validos,
         prompt: args.prompt || mensagens[mensagens.length - 1].texto,
         texto: args.mensagem || (modo === "editar" ? "Aplicando a alteração..." : "Criando a arte..."),
       });

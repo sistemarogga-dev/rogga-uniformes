@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Download, Loader2, AlertCircle, X, Sparkles, Wand2, ZoomIn, ZoomOut,
   RotateCcw, Paperclip, ArrowUp, Square, Settings, SquarePen, Images, PanelLeftClose, Trash2,
-  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen, Pencil,
+  Search, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Timer, Lock, MessageSquare, PanelLeftOpen, Pencil, Columns2,
 } from "lucide-react";
 import {
   type ArteGerada, type Mensagem, type Conversa,
@@ -38,6 +38,28 @@ async function mensagensLeves(msgs: Mensagem[]): Promise<Mensagem[]> {
   return Promise.all(msgs.map(async (m) => (m.anexos?.length ? { ...m, anexos: await Promise.all(m.anexos.map(miniatura)) } : m)));
 }
 
+// Frases da tela inicial (uma sorteada a cada conversa nova)
+const FRASES = [
+  "Café na mão, logo no anexo: bora criar?",
+  "Prazo é igual camiseta lavada errado: sempre parece que encolheu.",
+  "O cliente quer “algo moderno, mas clássico”. Vamos nessa?",
+  "“É só um ajustezinho”, disse o cliente. Pode mandar!",
+  "“Aumenta a logo” — disse todo cliente, desde sempre.",
+  "Designer não erra: cria versões alternativas.",
+  "Reunião que podia ser e-mail? Aqui é arte que sai num clique.",
+  "Se a vida te der limões, faz um uniforme amarelo.",
+  "A pressa é inimiga da perfeição… mas a IA é amiga do prazo.",
+  "Qual é a missão de hoje, chefe?",
+  "Mais uma proposta saindo? O comercial agradece!",
+  "Segunda-feira de novo? Pelo menos o uniforme já está escolhido.",
+  "Trabalho em equipe: você manda o logo, eu faço o resto.",
+  "Meu superpoder: transformar “faz qualquer coisa” em arte aprovada.",
+  "A arte fica pronta antes do seu café esfriar. Testa aí!",
+  "Cliente indeciso? Relaxa, a gente faz até ele decidir.",
+  "Sexta-feira chegando e a proposta saindo. Bora?",
+  "Uniforme bonito é igual piada boa: todo mundo quer mostrar.",
+];
+
 const segundos = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s`;
@@ -51,6 +73,24 @@ interface ImagemEnviada {
 
 
 // Regras rígidas padrão (editáveis em Configurações)
+// Regras de EDIÇÃO padrão (editáveis em Configurações). As informações que mudam a cada
+// arte — cores medidas, quadros que podem mudar, papel de cada imagem — o servidor
+// acrescenta sozinho.
+const REGRAS_EDICAO_PADRAO = `MODO EDIÇÃO — a arte final deve ser IDÊNTICA à arte atual, mudando SOMENTE o que o designer pediu.
+
+MANTER IDÊNTICO (a menos que o pedido diga o contrário):
+✅ Logomarcas: mesmo desenho, letras, cores, proporções e posições. Copie a logo do arquivo original enviado — nunca redesenhe, simplifique, traduza ou troque.
+✅ Cores de todos os produtos (use os códigos de cor medidos na arte atual).
+✅ Textos aplicados: telefones, nomes, sites e marcas nas mangas.
+✅ Modelos dos produtos: corte, gola, mangas, botões, formato da bag e do windbanner.
+✅ Fundos (imagens de contexto), posições e enquadramentos.
+
+REGRAS:
+1. Se o pedido não fala de cor, não mude nenhuma cor.
+2. Se o pedido não fala de logo, não mude nenhuma logo.
+3. Não acrescente nem remova nada que não foi pedido.
+4. Cada produto fica inteiro dentro do seu quadro, com folga das bordas, sem zoom e sem um produto sobrepor o outro.`;
+
 const REGRAS_PADRAO = `Use a PRIMEIRA imagem (arte de referência da Rogga) como base. Ela é um TEMPLATE FIXO e o resultado deve ser IDÊNTICO a ela.
 
 O QUE PODE MUDAR (SOMENTE ISSO):
@@ -92,6 +132,7 @@ const lerPreview = (f: File) =>
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
+  const [regrasEdicao, setRegrasEdicao] = useState(REGRAS_EDICAO_PADRAO);
   const [usarMascara, setUsarMascara] = useState(true);
   const [qualidade, setQualidade] = useState<"rapida" | "maxima">("rapida");
 
@@ -137,6 +178,24 @@ export default function GeradorPage() {
   }, [arteModal, navegarModal]);
   // Artes já baixadas nesta sessão (o botão "Baixar" fica azul depois do clique)
   const [baixadas, setBaixadas] = useState<Set<number>>(new Set());
+  // Frase da tela inicial: sorteada depois de carregar (sem diferença servidor × navegador)
+  const [frase, setFrase] = useState(FRASES[0]);
+  const sortearFrase = useCallback(() => {
+    setFrase((atual) => {
+      const outras = FRASES.filter((f) => f !== atual);
+      return outras[Math.floor(Math.random() * outras.length)];
+    });
+  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { sortearFrase(); }, [sortearFrase]);
+  // Comparar antes/depois de uma edição
+  const [comparar, setComparar] = useState<{ antes: string; depois: string; titulo: string } | null>(null);
+  useEffect(() => {
+    if (!comparar) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopImmediatePropagation(); setComparar(null); } };
+    window.addEventListener("keydown", onKey, true); // antes do Esc da tela cheia
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [comparar]);
   const [configAberta, setConfigAberta] = useState(false);
   const [arrastando, setArrastando] = useState(false);
 
@@ -252,8 +311,8 @@ export default function GeradorPage() {
       const r = await fetch("/api/artes");
       if (r.status === 401) { setAcesso("bloqueado"); return; }
       const d = await r.json();
-      const daNuvem: ArteGerada[] = (d.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string }) =>
-        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho }));
+      const daNuvem: ArteGerada[] = (d.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string; logos?: string[]; anterior?: number }) =>
+        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho, logos: a.logos, anterior: a.anterior }));
       setArtes(daNuvem);
       setAgora(Date.now());
 
@@ -274,8 +333,8 @@ export default function GeradorPage() {
         await excluirArteLocal(a.timestamp);
       }
       const d2 = await (await fetch("/api/artes")).json();
-      setArtes((d2.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string }) =>
-        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho })));
+      setArtes((d2.artes || []).map((a: { url: string; logomarca: string; vendedor: string; timestamp: number; caminho: string; logos?: string[]; anterior?: number }) =>
+        ({ url: a.url, prompt: "", logomarca: a.logomarca, vendedor: a.vendedor, timestamp: a.timestamp, caminho: a.caminho, logos: a.logos, anterior: a.anterior })));
     } catch {
       // sem histórico agora; o gerador continua funcionando
     }
@@ -332,6 +391,8 @@ export default function GeradorPage() {
   // Configurações lembradas no navegador
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
+    const re = localStorage.getItem("rogga-regras-edicao-v1");
+    if (re) setRegrasEdicao(re);
     const r = localStorage.getItem("rogga-regras-v2");
     if (r) setRegras(r);
     if (localStorage.getItem("rogga-mascara") === "false") setUsarMascara(false);
@@ -339,6 +400,7 @@ export default function GeradorPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => { localStorage.setItem("rogga-regras-v2", regras); }, [regras]);
+  useEffect(() => { localStorage.setItem("rogga-regras-edicao-v1", regrasEdicao); }, [regrasEdicao]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
   useEffect(() => { localStorage.setItem("rogga-qualidade", qualidade); }, [qualidade]);
 
@@ -457,7 +519,7 @@ export default function GeradorPage() {
 
     try {
       // 1) Conversa: o assistente responde ou decide gerar/editar
-      let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean };
+      let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean; quadros?: string[] };
       {
         const resChat = await fetch("/api/chat", {
           method: "POST",
@@ -498,6 +560,9 @@ export default function GeradorPage() {
         if (editando.caminho) fd.append("basePath", editando.caminho);
         else fd.append("baseImage", editando.url);
         fd.append("logomarcaBase", editando.logomarca);
+        fd.append("regrasEdicao", regrasEdicao);
+        fd.append("quadros", (chat.quadros || []).join(","));
+        fd.append("logos", (editando.logos || []).join(","));
       }
 
       const res = await fetch("/api/gerar", { method: "POST", body: fd, signal: controller.signal });
@@ -508,7 +573,7 @@ export default function GeradorPage() {
       }
 
       // Resposta em partes (uma linha JSON por evento): prévias e depois a arte final
-      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number; arte?: { caminho: string; url: string } | null };
+      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number; arte?: { caminho: string; url: string } | null; logos?: string[]; anterior?: number };
       let final: Evento | null = null;
       const leitor = res.body.getReader();
       const dec = new TextDecoder();
@@ -534,6 +599,9 @@ export default function GeradorPage() {
         vendedor: "",
         timestamp: final.timestamp || Date.now(),
         caminho: final.arte?.caminho, tempoMs: Date.now() - inicio,
+        logos: final.logos, anterior: final.anterior,
+        // versão anterior para o botão "Comparar" (endereço leve quando está na nuvem)
+        antes: editando ? (editando.caminho ? `/api/artes/imagem?p=${encodeURIComponent(editando.caminho)}` : editando.url) : undefined,
       };
       atualizarMsg(respId, { arte: nova, status: undefined, previa: undefined });
       // A arte nova NÃO entra em edição sozinha: só quando o designer clicar em "Editar"
@@ -553,7 +621,7 @@ export default function GeradorPage() {
       setGerandoImagem(false);
       abortRef.current = null;
     }
-  }, [texto, imagens, ocupado, mensagens, baseArte, regras, usarMascara, qualidade]);
+  }, [texto, imagens, ocupado, mensagens, baseArte, regras, regrasEdicao, usarMascara, qualidade]);
 
   const parar = () => abortRef.current?.abort();
 
@@ -579,6 +647,7 @@ export default function GeradorPage() {
   };
 
   const novaConversa = () => {
+    sortearFrase();
     if (ocupado) parar();
     conversaIdRef.current = null;
     setConversaId(null);
@@ -716,6 +785,14 @@ export default function GeradorPage() {
   };
 
   const hora = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+  // Versão anterior de uma arte editada (na conversa vem pronta; na aba Artes, pelo histórico)
+  const antesDe = (arte: ArteGerada) =>
+    arte.antes ?? (arte.anterior ? artes.find((a) => a.timestamp === arte.anterior)?.url : undefined);
+  const abrirComparacao = (arte: ArteGerada) => {
+    const antes = antesDe(arte);
+    if (antes) setComparar({ antes, depois: arte.url, titulo: arte.logomarca });
+  };
 
   // ─── Histórico: pesquisa, filtro de datas e pastas por dia ─────────────────────
   // Chave do dia no fuso local (AAAA-MM-DD), a mesma usada pelos <input type="date">.
@@ -857,7 +934,11 @@ export default function GeradorPage() {
               <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-[#2563EB]/15 flex items-center justify-center">
                 <Lock size={20} className="text-[#60A5FA]" />
               </div>
-              <p className="font-bold tracking-wide text-white">ROGGA <span className="text-[#60A5FA] font-semibold text-sm">Gerador de Artes</span></p>
+              <p className="flex items-center justify-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/simbolo-rogga.png" alt="Rogga" width={26} height={26} className="w-[26px] h-[26px]" />
+                <span className="text-[#60A5FA] font-semibold text-sm">Gerador de Artes</span>
+              </p>
               <p className="text-xs text-gray-500">Digite a senha da equipe. Este navegador vai lembrar dela.</p>
             </div>
             <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus
@@ -1064,9 +1145,10 @@ export default function GeradorPage() {
           className="p-2 rounded-lg text-gray-300 hover:bg-white/10 transition-colors">
           <SquarePen size={19} />
         </button>
-        <div className="flex-1 min-w-0">
-          <span className="font-bold tracking-wide text-white">ROGGA</span>
-          <span className="text-[#60A5FA] font-semibold ml-1.5 text-sm">Gerador de Artes</span>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/simbolo-rogga.png" alt="Rogga" width={30} height={30} className="w-[30px] h-[30px] shrink-0" />
+          <span className="text-[#60A5FA] font-semibold text-sm truncate">Gerador de Artes</span>
         </div>
         <button onClick={() => setConfigAberta(true)} title="Configurações"
           className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
@@ -1078,8 +1160,11 @@ export default function GeradorPage() {
         /* ===== ESTADO VAZIO ===== */
         <main className="flex-1 flex flex-col items-center justify-center px-4 pb-16">
           <div className="w-full max-w-3xl">
-            <h1 className="text-center text-2xl sm:text-3xl font-semibold text-white mb-8">
-              O que vamos criar hoje?
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-rogga.png" alt="Rogga Uniformes" width={640} height={210}
+              className="mx-auto mb-6 w-52 sm:w-64 h-auto" />
+            <h1 className="text-center text-xl sm:text-2xl font-semibold text-white mb-8 min-h-[2lh] sm:min-h-0 text-balance">
+              {frase}
             </h1>
             {composer}
           </div>
@@ -1200,6 +1285,12 @@ export default function GeradorPage() {
                                 <Wand2 size={14} /> Editar
                               </button>
                             )}
+                            {antesDe(m.arte) && (
+                              <button onClick={() => abrirComparacao(m.arte!)} title="Ver a versão anterior ao lado"
+                                className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors">
+                                <Columns2 size={14} /> Comparar
+                              </button>
+                            )}
                             {m.arte.tempoMs !== undefined && (
                               <span className="flex items-center gap-1 text-[11px] text-gray-500 px-2" title="Tempo de geração">
                                 <Timer size={12} /> {segundos(m.arte.tempoMs)}
@@ -1275,15 +1366,56 @@ export default function GeradorPage() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-300">Regras rígidas</p>
+                <p className="text-sm font-semibold text-gray-300">Regras rígidas <span className="font-normal text-gray-500">— criação de arte nova</span></p>
                 <button onClick={() => setRegras(REGRAS_PADRAO)}
                   className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
                   <RotateCcw size={12} /> Restaurar padrão
                 </button>
               </div>
-              <p className="text-xs text-gray-500">Enviadas em toda geração. Ficam salvas neste navegador.</p>
+              <p className="text-xs text-gray-500">Enviadas quando uma arte nova é criada. Ficam salvas neste navegador.</p>
               <textarea value={regras} onChange={(e) => setRegras(e.target.value)} rows={14}
                 className="w-full border border-white/10 rounded-xl px-3 py-2 text-xs bg-black/20 text-gray-200 resize-y leading-relaxed focus:outline-none focus:border-white/25" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-300">Regras de edição <span className="font-normal text-gray-500">— ao editar uma arte</span></p>
+                <button onClick={() => setRegrasEdicao(REGRAS_EDICAO_PADRAO)}
+                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                  <RotateCcw size={12} /> Restaurar padrão
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Enviadas em toda edição, junto com o pedido do designer. O gerador acrescenta sozinho as cores medidas na arte,
+                os quadros que podem mudar e a logo original. Ficam salvas neste navegador.
+              </p>
+              <textarea value={regrasEdicao} onChange={(e) => setRegrasEdicao(e.target.value)} rows={14}
+                className="w-full border border-white/10 rounded-xl px-3 py-2 text-xs bg-black/20 text-gray-200 resize-y leading-relaxed focus:outline-none focus:border-white/25" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== COMPARAR ANTES / DEPOIS ===== */}
+      {comparar && (
+        <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+            <div className="flex-1 min-w-0 text-white">
+              <p className="text-sm font-semibold truncate">Comparar edição — {comparar.titulo}</p>
+              <p className="text-[11px] text-gray-400">À esquerda a versão anterior; à direita a editada.</p>
+            </div>
+            <button onClick={() => setComparar(null)} aria-label="Fechar comparação"
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white"><X size={18} /></button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-6">
+            <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-5xl mx-auto">
+              {([["Antes", comparar.antes], ["Depois", comparar.depois]] as const).map(([rotulo, src]) => (
+                <figure key={rotulo} className="space-y-2">
+                  <figcaption className={`text-center text-xs font-semibold ${rotulo === "Depois" ? "text-[#60A5FA]" : "text-gray-400"}`}>{rotulo}</figcaption>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`Arte ${rotulo.toLowerCase()} da edição`} className="w-full rounded-xl border border-white/10" />
+                </figure>
+              ))}
             </div>
           </div>
         </div>
@@ -1316,6 +1448,12 @@ export default function GeradorPage() {
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">
               <Wand2 size={14} /> Editar
             </button>
+            {antesDe(arteModal) && (
+              <button onClick={() => abrirComparacao(arteModal)} title="Ver a versão anterior ao lado"
+                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold">
+                <Columns2 size={14} /> Comparar
+              </button>
+            )}
             <button onClick={() => baixarImagem(arteModal)}
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold">
               <Download size={14} /> Baixar
