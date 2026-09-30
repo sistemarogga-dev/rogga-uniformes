@@ -1086,9 +1086,10 @@ export default function GeradorPage() {
                   </div>
                 ) : (
                   <div key={m.id} className="flex gap-3">
-                    <div className="w-8 h-8 shrink-0 rounded-full bg-[#2563EB] flex items-center justify-center text-[11px] font-black text-white">
-                      R
-                    </div>
+                    {/* "Perfil" do assistente: o símbolo RG da Rogga */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/simbolo-rogga.png" alt="Rogga" width={32} height={32} className="w-8 h-8 shrink-0" />
+
                     <div className="flex-1 min-w-0 pt-1 space-y-3">
                       {m.status === "pensando" && (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
