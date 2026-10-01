@@ -81,10 +81,10 @@ const reduzir = (img: Buffer, max: number) =>
 // Pontos do corpo de cada produto (coordenadas da referência 900x1600, longe das logos)
 // onde a cor é medida na arte atual antes de uma edição.
 const PONTOS_COR: Array<{ produto: string; x: number; y: number }> = [
-  { produto: "polo (frente)", x: 200, y: 610 },
-  { produto: "polo (costas)", x: 560, y: 640 },
-  { produto: "camiseta (frente)", x: 95, y: 990 },
-  { produto: "camiseta (costas)", x: 300, y: 1005 },
+  { produto: "polo front", x: 200, y: 610 },
+  { produto: "polo back", x: 560, y: 640 },
+  { produto: "t-shirt front", x: 95, y: 990 },
+  { produto: "t-shirt back", x: 300, y: 1005 },
   { produto: "windbanner", x: 700, y: 880 },
   { produto: "bag", x: 215, y: 1205 },
 ];
@@ -199,11 +199,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Escreva o prompt da arte que deseja gerar." }, { status: 400 });
   }
 
-  // A BASE é sempre a arte de referência limpa: ela é o molde do layout e das posições
-  // e tamanhos dos produtos. Na edição, a arte atual vai como SEGUNDA imagem (só para
-  // copiar cores, logos, textos e fundos). Antes a arte atual era a base, e a cada
-  // edição a IA "aproximava" um pouco os produtos — eles cresciam, encostavam nas
-  // bordas dos quadros e começavam a se sobrepor.
+  // Criação: a IA recebe o recorte da arte de referência (molde do layout).
+  // Edição: recebe só o recorte da ARTE ATUAL com os quadros que mudam; o resto da arte
+  // é recolado pixel a pixel, então os produtos não "crescem" a cada edição.
   let arteAtual: Buffer | null = null;
   if (baseImage?.startsWith("data:")) arteAtual = Buffer.from(baseImage.split(",")[1], "base64");
   else if (basePath && caminhoValido(basePath)) {
@@ -222,51 +220,60 @@ export async function POST(request: Request) {
   }
   const base = fs.readFileSync(templatePath);
 
+  // ─── PROMPT (em inglês: menos tokens = menos custo) ─────────────────────────
+  // As regras (Configurações) dizem O QUE fazer; aqui vão só as informações desta
+  // geração: o papel de cada imagem, o recorte, as cores medidas e os anexos numerados.
   const quadrosDaRegiao = (editando && quadrosPedidos.length ? quadrosPedidos : ZONAS.map((z) => z.nome));
   const regiao = regiaoDosQuadros(quadrosDaRegiao);
-  const nomesRecorte = ZONAS.filter((z) => quadrosDaRegiao.includes(z.nome)).map((z) => z.rotulo).join(", ");
-  const notaRecorte = `
-IMPORTANTE — RECORTE: as imagens da arte (referência${editando ? " e arte atual" : ""}) mostram SÓ um recorte da proposta: ${regiao === AREA_PRODUTOS ? "a área dos quatro quadros de produto" : `o(s) quadro(s) ${nomesRecorte}`}, sem o cabeçalho e o rodapé (eles são aplicados depois, automaticamente). Gere a imagem exatamente com este mesmo enquadramento do recorte — mesmas bordas, quadros e etiquetas nas mesmas posições. Não acrescente cabeçalho, título nem rodapé.`;
-  const regraEnquadramento = `- Cada produto fica INTEIRO dentro do seu quadro, com folga das bordas, exatamente na posição e no tamanho da arte de referência: nada cortado pelas bordas dos quadros, sem aproximar (zoom) e sem um produto sobrepor o outro.`;
-
-  // Edição: só os quadros pedidos mudam; os outros vêm da arte atual pixel a pixel
-  const quadros = quadrosDaRegiao;
+  const quadros = quadrosDaRegiao; // na edição, só estes quadros mudam; os outros vêm da arte atual pixel a pixel
+  const nomesQuadros = ZONAS.filter((z) => quadros.includes(z.nome)).map((z) => z.rotulo).join(", ");
   const logosOriginais = editando ? await Promise.all(logosEnviados.map(async (f) => Buffer.from(await f.arrayBuffer()))) : [];
   const cores = arteAtual ? await medirCores(arteAtual).catch(() => "") : "";
 
-  // Informações automáticas da edição (mudam a cada arte, por isso não ficam nas Configurações)
-  const notaFresca = editando
-    ? `
-INFORMAÇÕES DESTA EDIÇÃO (automáticas):
-- 1ª imagem: recorte da arte de referência da Rogga — serve SÓ como molde de posições, tamanhos e enquadramentos dos produtos. NÃO copie dela cores, logos, textos nem fundos.
-- 2ª imagem: o mesmo recorte da ARTE ATUAL deste cliente — é dela que vêm as cores, as logos, os textos e os FUNDOS (imagens de contexto) de cada quadro. Mantenha tudo idêntico a ela, inclusive o fundo, a menos que o pedido mande trocar.${logosOriginais.length ? ` Imagens 3 em diante: os arquivos ORIGINAIS da logomarca do cliente — copie a logo exatamente destes arquivos, sem redesenhar, simplificar ou trocar nada.` : ""}
-${cores ? `- Cores medidas na arte atual (mantenha exatamente, a menos que o pedido mude a cor): ${cores}.\n` : ""}- Quadros que podem mudar nesta edição: ${ZONAS.filter((z) => quadros.includes(z.nome)).map((z) => z.rotulo).join(", ")}. Nos demais quadros não mude nada.
-${regraEnquadramento}`
-    : `
-${regraEnquadramento}`;
-  const notaNova = editando ? "" : `
-GEOMETRIA OBRIGATÓRIA (NÃO DESLOCAR NADA):
-- A primeira imagem é o recorte da ARTE DE REFERÊNCIA da Rogga. O resultado deve ser IDÊNTICO a ela em layout: bordas douradas e etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) permanecem exatamente iguais.
-- Os QUATRO quadros de produto têm posição e tamanho FIXOS: POLO PIQUET (quadro largo no topo), CAMISETA (meio à esquerda), BAGA PERSONALIZADA (embaixo à esquerda) e WINDBANNER (quadro alto à direita). Pinte SOMENTE dentro deles, sem ultrapassar as bordas.
+  // Anexos numerados como o designer vê na tela ("anexo 1: peito esquerdo")
+  const qtdAnexos = imagens.filter((f) => f && typeof f === "object" && "size" in f && f.size > 0).length;
+  const numerosAnexos = ((formData.get("numerosAnexos") as string) || "").split(",").map(Number);
+  const numeroDoAnexo = (i: number) => (Number.isInteger(numerosAnexos[i]) && numerosAnexos[i] > 0 ? numerosAnexos[i] : i + 1);
+  // Ordem das imagens: 1 = referência (criação) OU arte atual (edição); depois logos
+  // originais (edição) e anexos. Na edição a referência NÃO vai: o recorte da arte atual
+  // já tem o mesmo layout, e com a referência junto a IA chegava a copiar o "LOGO AQUI".
+  const primeiraLogo = 2;
+  const primeiroAnexo = primeiraLogo + logosOriginais.length;
+  const faixa = (de: number, qtd: number) => (qtd > 1 ? `Images ${de}-${de + qtd - 1}` : `Image ${de}`);
+  // "ANEXO 1" vira "the logo from image 4": com a palavra no prompt, a IA chegava a
+  // ESCREVER "ANEXO 1" na camisa em vez de aplicar a imagem.
+  const imagemDoNumero = new Map(Array.from({ length: qtdAnexos }, (_, i) => [numeroDoAnexo(i), primeiroAnexo + i]));
+  const pedido = promptUser.trim().replace(/\banexos?\s*(\d+)\b/gi, (txt, n) =>
+    imagemDoNumero.has(Number(n)) ? `the logo from image ${imagemDoNumero.get(Number(n))}` : txt);
 
-O QUE MUDA (E SOMENTE ISSO):
-1. Os PRODUTOS (MESMOS MODELOS DA REFERÊNCIA — não troque corte, gola, mangas, botões nem formato, a não ser que o designer peça): polo piquet (frente e costas), camiseta (frente e costas), bag de cordão (mochila saco) e windbanner (bandeira com base). Mesmo tipo de produto, mesma posição, mesmo tamanho, mesmo ângulo e mesmo enquadramento da referência — mudam apenas as cores e a personalização: troque cada "LOGO AQUI" pela logomarca do cliente (peito esquerdo e costas centralizada nas camisas; centralizada na bag e no windbanner).
-   - Frente e costas da MESMA peça têm SEMPRE a mesma cor (a polo inteira numa cor, a camiseta inteira em outra).
-   - Mantenha os detalhes de design dos produtos da referência, apenas recolorindo: as faixas diagonais decorativas na parte de baixo do windbanner, a etiqueta na barra das camisas, os cordões da bag.
-   - Nas camisas, a logo da FRENTE é pequena, no peito esquerdo (do mesmo tamanho do "LOGO AQUI" da referência); a das COSTAS é grande e centralizada.
-2. As IMAGENS DE CONTEXTO atrás dos produtos: novo cenário fotográfico ligado ao ramo do cliente, cobrindo 100% de cada quadro, com profundidade, desfoque natural e luz premium. Os produtos ficam nítidos em primeiro plano.
-- Não reaproveite as cores e os fundos da referência; crie a versão do cliente.`;
-  // Criação: regras rígidas + pedido. Edição: regras de edição + pedido (as regras
-  // rígidas mandam escolher cores pela logomarca, o que contradiz "manter idêntico").
-  const regrasUsadas = (editando ? regrasEdicao : regras).trim();
-  const editPrompt = [
-    regrasUsadas,
-    regrasUsadas ? (editando ? "\nPEDIDO DO DESIGNER (altere SOMENTE isto):" : "\nINSTRUÇÕES DESTA ARTE:") : "",
-    promptUser.trim(),
-    notaNova,
-    notaFresca,
-    notaRecorte,
-  ].filter(Boolean).join("\n").trim();
+  const linhas: string[] = [
+    (editando ? regrasEdicao : regras).trim(),
+    "",
+    editando ? "REQUEST (change ONLY this):" : "THIS ART:",
+    pedido,
+    "",
+    "IMAGES:",
+    editando
+      ? "- Image 1: crop of the CURRENT ART = the base. Keep it identical (layout, product positions and sizes, colors, logos, texts, backgrounds) except for the request."
+      : "- Image 1: crop of the Rogga template (layout to keep).",
+  ];
+  if (editando) {
+    if (logosOriginais.length) linhas.push(`- ${faixa(primeiraLogo, logosOriginais.length)}: ORIGINAL client logo files. Copy the logo exactly from them.`);
+  }
+  if (qtdAnexos) {
+    linhas.push(`- ${faixa(primeiroAnexo, qtdAnexos)}: designer's attachments (logos or artwork). When the request names an image, print exactly that image (no redrawing) ONLY on the stated product and spot — once, not mirrored to other spots. Never write the words "image" or "anexo" on the products. What the request does not mention (back logo, other products, background) stays ${editando ? "identical to the current art" : "as the rules say"}.`);
+    linhas.push(`  Shirt sides are from the WEARER's view: "left chest/sleeve" appears on the viewer's RIGHT in the front view; "right chest/sleeve" on the viewer's LEFT.`);
+  }
+  if (editando) {
+    if (cores) linhas.push(`- Measured colors of the current art (keep unless the request changes them): ${cores}.`);
+    linhas.push(`- Panels allowed to change: ${nomesQuadros}. Nothing else changes.`);
+  }
+  linhas.push(
+    "",
+    `CROP: the images show only ${regiao === AREA_PRODUTOS ? "the four product panels" : `the panel(s) ${nomesQuadros}`} of the proposal; header and footer are added later. Output exactly this framing: same borders, panels and labels in the same places. No header, title or footer.`,
+    `Each product fully inside its panel with margin, same position and size as image 1: no cropping, no zoom, no overlap. The text "LOGO AQUI" is only a placeholder and never appears${editando ? "; logos in the current art stay" : ""}.`,
+  );
+  const editPrompt = linhas.join("\n").trim();
 
   // Camada de baixo da composição: na criação, a referência; na edição, a ARTE ATUAL
   // no tamanho original — assim os quadros que não mudam saem idênticos, pixel a pixel.
@@ -347,19 +354,20 @@ O QUE MUDA (E SOMENTE ISSO):
   // Sem prévias (partial_images): cada prévia também era cobrada.
   const gerarImagem = async (modelo: string) => {
     const { w, h } = tamanhoDoRecorte(modelo, regiao);
-    // Ordem: 1ª recorte da referência (só molde do layout, vai pequeno), 2ª recorte da
-    // arte atual (só na edição), logos originais e anexos — tudo reduzido.
-    const [refRecorte, atualRecorte, logosRed, anexosRed] = await Promise.all([
-      recortar(base, regiao, 768),
-      arteAtual ? recortar(arteAtual, regiao, 1024) : null,
-      Promise.all(logosOriginais.map((b) => reduzir(b, 512))),
-      Promise.all(anexos.map((a) => reduzir(a.buffer, 1024))),
+    // Ordem: 1ª recorte da referência (criação) ou da arte atual (edição), depois logos
+    // originais e anexos.
+    // Custo: a OpenAI reduz cada imagem para no máx. 512px no lado maior e cobra 1 token
+    // a cada 16x16 px (512x512 = 1.024 tokens; 384x384 = 576). Por isso a referência e
+    // os logos vão em 384px; a arte atual vai em 512 (é a base da edição).
+    const [primeira, logosRed, anexosRed] = await Promise.all([
+      arteAtual ? recortar(arteAtual, regiao, 512) : recortar(base, regiao, 384),
+      Promise.all(logosOriginais.map((b) => reduzir(b, 384))),
+      Promise.all(anexos.map((a) => reduzir(a.buffer, 384))),
     ]);
     const files = await Promise.all([
-      toFile(refRecorte, "referencia.jpg", { type: "image/jpeg" }),
-      ...(atualRecorte ? [toFile(atualRecorte, "arte-atual.jpg", { type: "image/jpeg" })] : []),
+      toFile(primeira, arteAtual ? "arte-atual.jpg" : "referencia.jpg", { type: "image/jpeg" }),
       ...logosRed.map((b, i) => toFile(b, `logo-original-${i + 1}.png`, { type: "image/png" })),
-      ...anexosRed.map((b, i) => toFile(b, `imagem-${i + 1}.png`, { type: "image/png" })),
+      ...anexosRed.map((b, i) => toFile(b, `anexo-${numeroDoAnexo(i)}.png`, { type: "image/png" })),
     ].slice(0, 16));
     const r = await openai.images.edit({
       model: modelo,

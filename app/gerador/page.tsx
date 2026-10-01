@@ -171,15 +171,15 @@ export default function GeradorPage() {
   // Configurações lembradas no navegador
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
-    const re = localStorage.getItem("rogga-regras-edicao-v1");
+    const re = localStorage.getItem("rogga-regras-edicao-v2");
     if (re) setRegrasEdicao(re);
-    const r = localStorage.getItem("rogga-regras-v2");
+    const r = localStorage.getItem("rogga-regras-v3");
     if (r) setRegras(r);
     if (localStorage.getItem("rogga-mascara") === "false") setUsarMascara(false);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
-  useEffect(() => { localStorage.setItem("rogga-regras-v2", regras); }, [regras]);
-  useEffect(() => { localStorage.setItem("rogga-regras-edicao-v1", regrasEdicao); }, [regrasEdicao]);
+  useEffect(() => { localStorage.setItem("rogga-regras-v3", regras); }, [regras]);
+  useEffect(() => { localStorage.setItem("rogga-regras-edicao-v2", regrasEdicao); }, [regrasEdicao]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
 
   // Progresso animado enquanto a imagem é gerada
@@ -304,6 +304,8 @@ export default function GeradorPage() {
         if (await ehPropostaRogga(img.preview)) { propostaAnexada = img; break; }
       }
       const outrosAnexos = anexosEnviados.filter((img) => img !== propostaAnexada);
+      // Número de cada anexo como o designer vê na tela ("anexo 1", "anexo 2"...)
+      const numeroDo = (img: ImagemEnviada) => anexosEnviados.indexOf(img) + 1;
 
       // 1) Conversa: o assistente responde ou decide gerar/editar
       let chat: { tipo: string; modo?: string; prompt?: string; texto?: string; error?: string; semAcesso?: boolean; quadros?: string[] };
@@ -319,7 +321,9 @@ export default function GeradorPage() {
             })),
             temArte: !!baseArte || !!propostaAnexada,
             anexos: outrosAnexos.length,
+            numerosAnexos: outrosAnexos.map(numeroDo),
             propostaAnexada: !!propostaAnexada,
+            numeroProposta: propostaAnexada ? numeroDo(propostaAnexada) : undefined,
           }),
         });
         chat = await resChat.json();
@@ -347,7 +351,9 @@ export default function GeradorPage() {
       fd.append("usarMascara", String(usarMascara));
       fd.append("qualidade", qualidade);
       // Se a proposta anexada virou a arte a editar, ela não vai de novo como anexo
-      (editandoAnexo ? outrosAnexos : anexosEnviados).forEach((img) => fd.append("imagens", img.file));
+      const anexosDaGeracao = editandoAnexo ? outrosAnexos : anexosEnviados;
+      anexosDaGeracao.forEach((img) => fd.append("imagens", img.file));
+      fd.append("numerosAnexos", anexosDaGeracao.map(numeroDo).join(","));
       if (editando) {
         // Se a imagem da arte já está aqui no navegador (arte desta conversa ou proposta
         // anexada), ela vai direto — não depende de ler o armazenamento. Arte aberta
@@ -614,10 +620,12 @@ export default function GeradorPage() {
       >
         {imagens.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">
-            {imagens.map((img) => (
+            {imagens.map((img, i) => (
               <div key={img.id} className="relative w-16 h-16 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.preview} alt={img.file.name} className="w-full h-full object-contain p-1" />
+                <img src={img.preview} alt={`Anexo ${i + 1}`} className="w-full h-full object-contain p-1" />
+                {/* Número do anexo: o designer pode escrever "anexo 1: peito esquerdo" */}
+                <span className="absolute bottom-1 left-1 min-w-4 h-4 px-1 rounded-full bg-[#2563EB] text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
                 <button onClick={() => removerImagem(img.id)} aria-label="Remover imagem"
                   className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 text-gray-300 hover:text-white">
                   <X size={11} />
@@ -807,8 +815,11 @@ export default function GeradorPage() {
                     {m.anexos && m.anexos.length > 0 && (
                       <div className="flex flex-wrap justify-end gap-2">
                         {m.anexos.map((src, i) => (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img key={i} src={src} alt="Anexo" className="w-24 h-24 object-contain rounded-2xl bg-white/5 border border-white/10 p-1" />
+                          <div key={i} className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={src} alt={`Anexo ${i + 1}`} className="w-24 h-24 object-contain rounded-2xl bg-white/5 border border-white/10 p-1" />
+                            <span className="absolute bottom-1.5 left-1.5 min-w-5 h-5 px-1 rounded-full bg-[#2563EB] text-white text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+                          </div>
                         ))}
                       </div>
                     )}

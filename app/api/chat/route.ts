@@ -26,10 +26,11 @@ Quando usar:
 - Se ele pedir claramente uma arte do zero mesmo já existindo uma → gerar_arte.
 - Dúvidas, conversa, ideias de cores/estampas, pedidos de sugestão → responda em texto, sem ferramenta.
 
-Como escrever o "prompt" das ferramentas:
-- gerar_arte: prompt DETALHADO em português, bem estruturado: cores de cada produto (polo, camiseta, bag e windbanner — combinação pela logomarca/ramo, com cores diferentes entre polo e camiseta para contraste), logo no peito esquerdo e centralizado nas costas das camisas e centralizado na bag e no windbanner, retirar o fundo dos logotipos anexados, e o cenário de fundo de cada quadro ligado ao ramo da empresa. Não repita regras gerais do template (botões da polo, preservar cabeçalho/rodapé).
-- editar_arte: descreva SOMENTE a mudança pedida, de forma clara, e diga para manter todo o resto exatamente igual. Nunca invente mudanças de cor ou de logo que o usuário não pediu.
+Como escrever o "prompt" das ferramentas — SEMPRE EM INGLÊS, curto e objetivo (menos texto = menos custo). As regras gerais do template já vão automaticamente: não repita (posição das logos, botões da polo, cabeçalho/rodapé, enquadramento).
+- gerar_arte: só o que é desta arte: client name and industry, the color of each product (polo, t-shirt, bag, windbanner — pela logomarca/ramo, polo e camiseta com cores diferentes) e the background scene of each panel. Inclua qualquer pedido específico do usuário. Ex: "Client: MW Instalações (HVAC). Polo navy, t-shirt light gray, bag navy, windbanner navy with light-blue stripes. Backgrounds: modern HVAC warehouse with AC units."
+- editar_arte: SOMENTE a mudança pedida, em 1-2 frases em inglês. Nunca invente mudanças de cor ou de logo que o usuário não pediu. Ex: "Make the t-shirt (front and back) white."
 - editar_arte, campo "quadros": liste SOMENTE os quadros que a mudança afeta — "polo", "camiseta", "bag", "windbanner". Os outros quadros são copiados da arte atual sem nenhuma alteração. Ex: "troque o fundo do windbanner" → ["windbanner"]; "polo verde" → ["polo"]; "troque os fundos" ou "logo maior em tudo" → os 4; mudança na logo/cor da marca em todos os produtos → os 4. Na dúvida, inclua o quadro.
+- ANEXOS NUMERADOS: os anexos aparecem numerados para o usuário (anexo 1, anexo 2, anexo 3...). Quando ele disser onde vai cada um ("anexo 1: peito esquerdo", "anexo 2 no peito direito", "anexo 3 nas costas"), escreva no prompt EXATAMENTE essas referências em maiúsculas — "ANEXO 1", "ANEXO 2" — com o local e o produto de cada uma, sem trocar os números. Ex: "Polo: ANEXO 1 on the left chest, ANEXO 2 on the right chest. Keep the back logo and background." Se ele não disser o produto, aplique nas camisas (polo e camiseta) quando o local for de camisa (peito, manga, costas). Em editar_arte, inclua nos "quadros" todos os produtos que recebem algum anexo.
 - Considere o histórico: pedidos anteriores continuam valendo, a não ser que o usuário mude.
 
 O campo "mensagem" é o que aparece para o usuário no chat enquanto a arte é gerada: 1 frase curta (ex: "Beleza! Vou deixar a polo azul-marinho e manter o resto.").`;
@@ -78,12 +79,15 @@ export async function POST(request: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
-    const { mensagens, temArte, anexos, propostaAnexada } = (await request.json()) as {
+    const { mensagens, temArte, anexos, numerosAnexos, propostaAnexada, numeroProposta } = (await request.json()) as {
       mensagens: MensagemChat[];
       temArte: boolean;
       anexos: number;
+      numerosAnexos?: number[];
       propostaAnexada?: boolean;
+      numeroProposta?: number;
     };
+    const numeros = Array.isArray(numerosAnexos) ? numerosAnexos.filter(Number.isInteger).slice(0, 16) : [];
 
     if (!Array.isArray(mensagens) || mensagens.length === 0) {
       return Response.json({ error: "Escreva uma mensagem." }, { status: 400 });
@@ -91,10 +95,10 @@ export async function POST(request: Request) {
 
     const contexto = [
       propostaAnexada
-        ? "O usuário ANEXOU nesta mensagem uma PROPOSTA PRONTA da Rogga: é a arte a ser editada (use editar_arte para qualquer mudança nela)."
+        ? `O usuário ANEXOU nesta mensagem uma PROPOSTA PRONTA da Rogga${numeroProposta ? ` (é o anexo ${numeroProposta})` : ""}: é a arte a ser editada (use editar_arte para qualquer mudança nela).`
         : temArte ? "Já existe uma arte na conversa (pode ser editada)." : "Ainda não existe nenhuma arte na conversa.",
       anexos > 0
-        ? `O usuário anexou ${anexos} imagem(ns) nesta mensagem (logos/estampas/referências) — elas serão enviadas junto para a geração.`
+        ? `O usuário anexou ${anexos} imagem(ns) nesta mensagem (logos/estampas/referências) — elas serão enviadas junto para a geração.${numeros.length ? ` Números desses anexos: ${numeros.map((n) => `anexo ${n}`).join(", ")}.` : ""}`
         : "Nenhuma imagem anexada nesta mensagem.",
     ].join(" ");
 

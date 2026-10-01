@@ -43,7 +43,7 @@ export default function Configuracoes({
               <RotateCcw size={12} /> Restaurar padrão
             </button>
           </div>
-          <p className="text-xs text-gray-500">Enviadas quando uma arte nova é criada. Ficam salvas neste navegador.</p>
+          <p className="text-xs text-gray-500">Enviadas quando uma arte nova é criada. Escritas em inglês: a IA entende igual e gasta menos. Ficam salvas neste navegador.</p>
           <textarea value={regras} onChange={(e) => setRegras(e.target.value)} rows={14} className={campoTexto} />
         </div>
 
@@ -55,7 +55,7 @@ export default function Configuracoes({
             </button>
           </div>
           <p className="text-xs text-gray-500">
-            Enviadas em toda edição, junto com o pedido do designer. O gerador acrescenta sozinho as cores medidas na arte,
+            Enviadas em toda edição, junto com o pedido do designer (em inglês, para gastar menos). O gerador acrescenta sozinho as cores medidas na arte,
             os quadros que podem mudar e a logo original. Ficam salvas neste navegador.
           </p>
           <textarea value={regrasEdicao} onChange={(e) => setRegrasEdicao(e.target.value)} rows={14} className={campoTexto} />

@@ -1,50 +1,25 @@
 // Textos padrão enviados à IA (o designer pode editar os dois em Configurações).
+// Ficam em INGLÊS: a IA entende igual e o texto em inglês gasta menos tokens (menos custo).
 
 // Regras de EDIÇÃO: usadas ao editar uma arte. As informações que mudam a cada arte —
 // cores medidas, quadros que podem mudar, papel de cada imagem — o servidor acrescenta
 // sozinho (app/api/gerar).
-export const REGRAS_EDICAO_PADRAO = `MODO EDIÇÃO — a arte final deve ser IDÊNTICA à arte atual, mudando SOMENTE o que o designer pediu.
-
-MANTER IDÊNTICO (a menos que o pedido diga o contrário):
-✅ Logomarcas: mesmo desenho, letras, cores, proporções e posições. Copie a logo do arquivo original enviado — nunca redesenhe, simplifique, traduza ou troque.
-✅ Cores de todos os produtos (use os códigos de cor medidos na arte atual).
-✅ Textos aplicados: telefones, nomes, sites e marcas nas mangas.
-✅ Modelos dos produtos: corte, gola, mangas, botões, formato da bag e do windbanner.
-✅ Fundos (imagens de contexto), posições e enquadramentos.
-
-REGRAS:
-1. Se o pedido não fala de cor, não mude nenhuma cor.
-2. Se o pedido não fala de logo, não mude nenhuma logo.
-3. Não acrescente nem remova nada que não foi pedido.
-4. Cada produto fica inteiro dentro do seu quadro, com folga das bordas, sem zoom e sem um produto sobrepor o outro.`;
+export const REGRAS_EDICAO_PADRAO = `EDIT MODE: the result must be IDENTICAL to the current art, changing ONLY what the request asks.
+Keep unless the request says otherwise:
+- Logos: same design, letters, colors, size and position. Copy them from the original logo files; never redraw, simplify, translate or swap.
+- Product colors (use the measured hex codes).
+- Applied texts: phones, names, websites, sleeve marks.
+- Product models: cut, collar, sleeves, buttons, bag and windbanner shape.
+- Backgrounds, positions and framing.
+Do not add or remove anything that was not requested.`;
 
 // Regras rígidas: usadas ao CRIAR uma arte nova.
-export const REGRAS_PADRAO = `Use a PRIMEIRA imagem (arte de referência da Rogga) como base. Ela é um TEMPLATE FIXO e o resultado deve ser IDÊNTICO a ela.
-
-O QUE PODE MUDAR (SOMENTE ISSO):
-✅ Os produtos: polo piquet (frente e costas), camiseta (frente e costas), bag de cordão e windbanner — cores e aplicação da logomarca do cliente
-✅ As imagens de contexto (fundo fotográfico) atrás dos produtos, dentro de cada quadro
-
-O QUE NÃO PODE MUDAR:
-❌ Cabeçalho (ROGGA Uniformes, "PROPOSTA DE UNIFORMES" e o subtítulo)
-❌ Etiquetas dos quadros (POLO PIQUET, CAMISETA, WINDBANNER, BAGA PERSONALIZADA) e seus ícones
-❌ Bordas douradas, molduras, cantos arredondados e espaçamentos
-❌ Posição e tamanho dos 4 quadros
-❌ Rodapé (site, Instagram e "Atendimento para todo o Brasil")
-❌ Tipo, posição, tamanho, ângulo e enquadramento de cada produto
-
-REGRAS:
-1. Substituir cada "LOGO AQUI" pela logomarca enviada:
-- Polo e camiseta: peito esquerdo na frente e centralizada nas costas
-- Bag e windbanner: centralizada
-Retire o fundo dos logotipos anexados.
-
-2. Cores dos produtos escolhidas pela logomarca, pelo segmento e pela identidade visual do cliente. A polo e a camiseta devem ter cores diferentes entre si para gerar contraste.
-
-3. Polo: apenas 2 botões, sem listras e sem estampas na gola, carcela da mesma cor do tronco.
-
-4. Fundo de cada quadro: cenário fotográfico ligado ao ramo do cliente (ex: oficina → oficina premium; clínica → ambiente médico sofisticado; academia → academia premium; restaurante → cozinha gourmet; construção → obra moderna; transporte → centro logístico), com profundidade, desfoque natural, iluminação cinematográfica e aspecto premium. O fundo cobre 100% do quadro.
-
-5. Os produtos ficam totalmente nítidos em primeiro plano e os logotipos perfeitamente legíveis.
-
-6. Não criar nem remover áreas gráficas. O resultado deve parecer a arte de referência com apenas os produtos e os fundos trocados.`;
+export const REGRAS_PADRAO = `Image 1 is the fixed Rogga template. Keep it IDENTICAL: gold borders, frames, rounded corners, panel labels and icons, panel positions and sizes, and each product's type, model, position, size, angle and framing.
+Change ONLY:
+- Product colors and the client's logo, replacing every "LOGO AQUI": polo and t-shirt = small logo on the left chest (wearer's left, where "LOGO AQUI" is) and a large centered logo on the back; bag and windbanner = centered logo. Remove the logo's background.
+- The photo background inside each panel.
+Rules:
+1. Colors from the client's logo, industry and brand. Polo and t-shirt in different colors for contrast; front and back of the same garment always the same color.
+2. Polo: only 2 buttons, plain collar (no stripes or prints), placket the same color as the body.
+3. Keep the product details, only recolored: windbanner diagonal stripes, shirt hem tag, bag drawstrings.
+4. Background: premium photo of the client's industry (e.g. workshop, clinic, gym, kitchen, construction site, logistics center), depth of field, natural blur, cinematic light, covering 100% of each panel. Products sharp in front; logos perfectly legible.`;
