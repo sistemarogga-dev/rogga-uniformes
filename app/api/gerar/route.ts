@@ -34,14 +34,25 @@ const ZONAS = [
 // e o recorte é colado de volta no lugar. As imagens enviadas também vão reduzidas.
 type Regiao = { x: number; y: number; w: number; h: number }; // coordenadas 900x1600
 const AREA_PRODUTOS: Regiao = { x: 11, y: 240, w: 878, h: 1170 }; // 3:4 → gera 864x1152
-// Preço do gpt-image-2 em US$ por token (US$ 5 / 8 / 30 por milhão: texto enviado,
-// imagem enviada, imagem gerada). Usado só para mostrar o custo estimado de cada arte.
-const PRECO_GPT_IMAGE_2 = { texto: 5 / 1e6, imagem: 8 / 1e6, saida: 30 / 1e6 };
-type Uso = { input_tokens_details?: { text_tokens?: number; image_tokens?: number }; output_tokens?: number };
+// Preços oficiais em US$ por MILHÃO de tokens (platform.openai.com/docs/pricing, out/2026):
+// texto enviado, imagem enviada, imagem gerada e texto gerado. Mostra o custo de cada arte.
+const PRECOS: Record<string, { texto: number; imagem: number; saida: number; saidaTexto: number }> = {
+  "gpt-image-2": { texto: 5, imagem: 8, saida: 30, saidaTexto: 30 },
+  "gpt-image-1.5": { texto: 5, imagem: 8, saida: 32, saidaTexto: 10 },
+  "gpt-image-1-mini": { texto: 2, imagem: 2.5, saida: 8, saidaTexto: 8 },
+};
+type Uso = {
+  input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+  output_tokens?: number;
+  output_tokens_details?: { image_tokens?: number; text_tokens?: number };
+};
 const custoEmDolar = (modelo: string, u?: Uso) => {
-  if (!u || !modelo.startsWith("gpt-image-2")) return undefined; // outros modelos têm outro preço
-  const d = u.input_tokens_details || {};
-  return (d.text_tokens || 0) * PRECO_GPT_IMAGE_2.texto + (d.image_tokens || 0) * PRECO_GPT_IMAGE_2.imagem + (u.output_tokens || 0) * PRECO_GPT_IMAGE_2.saida;
+  const p = PRECOS[Object.keys(PRECOS).find((m) => modelo.startsWith(m)) ?? ""];
+  if (!u || !p) return undefined;
+  const ent = u.input_tokens_details || {};
+  const sai = u.output_tokens_details;
+  const saida = sai ? (sai.image_tokens || 0) * p.saida + (sai.text_tokens || 0) * p.saidaTexto : (u.output_tokens || 0) * p.saida;
+  return ((ent.text_tokens || 0) * p.texto + (ent.image_tokens || 0) * p.imagem + saida) / 1e6;
 };
 const PIXELS_MIN = 655_360; // menor imagem que o gpt-image-2 aceita
 const MARGEM = 10;
@@ -385,15 +396,16 @@ export async function POST(request: Request) {
       n: 1,
       size: `${w}x${h}`,
       quality: qualidade,
-      // gpt-image-2 já trabalha em alta fidelidade e recusa este parâmetro
-      ...(modelo.startsWith("gpt-image-2") ? {} : { input_fidelity: "high" }),
+      // Só o gpt-image-1/1.5 aceitam este parâmetro (o 2 já trabalha em alta fidelidade e
+      // o 1-mini o recusa). No 1.5 ele multiplica os tokens das imagens enviadas (~10 mil).
+      ...(/^gpt-image-1(\.5)?($|-\d{4})/.test(modelo) ? { input_fidelity: "high" } : {}),
       output_format: "jpeg",
       output_compression: 95,
     } as OpenAI.Images.ImageEditParamsNonStreaming);
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("Falha ao gerar imagem.");
     console.log(`[gerar] ${modelo} ${w}x${h} uso:`, JSON.stringify(r.usage ?? {}));
-    return { buffer: Buffer.from(b64, "base64"), uso: r.usage, tamanho: `${w}x${h}`, custoUsd: custoEmDolar(modelo, r.usage as Uso) };
+    return { buffer: Buffer.from(b64, "base64"), uso: r.usage, tamanho: `${w}x${h}`, modelo, custoUsd: custoEmDolar(modelo, r.usage as Uso) };
   };
 
   // Se o modelo principal não estiver disponível (400/403/404), tenta o gpt-image-1.5
@@ -431,7 +443,7 @@ export async function POST(request: Request) {
           categoria: analise.categoria,
           tempoMs: Date.now() - inicio,
           timestamp,
-          uso: gerada.uso ? { ...gerada.uso, tamanho: gerada.tamanho } : undefined,
+          uso: gerada.uso ? { ...gerada.uso, tamanho: gerada.tamanho, modelo: gerada.modelo } : undefined,
           custoUsd: gerada.custoUsd,
         });
       } catch (err: unknown) {
