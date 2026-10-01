@@ -34,6 +34,15 @@ const ZONAS = [
 // e o recorte é colado de volta no lugar. As imagens enviadas também vão reduzidas.
 type Regiao = { x: number; y: number; w: number; h: number }; // coordenadas 900x1600
 const AREA_PRODUTOS: Regiao = { x: 11, y: 240, w: 878, h: 1170 }; // 3:4 → gera 864x1152
+// Preço do gpt-image-2 em US$ por token (US$ 5 / 8 / 30 por milhão: texto enviado,
+// imagem enviada, imagem gerada). Usado só para mostrar o custo estimado de cada arte.
+const PRECO_GPT_IMAGE_2 = { texto: 5 / 1e6, imagem: 8 / 1e6, saida: 30 / 1e6 };
+type Uso = { input_tokens_details?: { text_tokens?: number; image_tokens?: number }; output_tokens?: number };
+const custoEmDolar = (modelo: string, u?: Uso) => {
+  if (!u || !modelo.startsWith("gpt-image-2")) return undefined; // outros modelos têm outro preço
+  const d = u.input_tokens_details || {};
+  return (d.text_tokens || 0) * PRECO_GPT_IMAGE_2.texto + (d.image_tokens || 0) * PRECO_GPT_IMAGE_2.imagem + (u.output_tokens || 0) * PRECO_GPT_IMAGE_2.saida;
+};
 const PIXELS_MIN = 655_360; // menor imagem que o gpt-image-2 aceita
 const MARGEM = 10;
 
@@ -254,7 +263,7 @@ export async function POST(request: Request) {
     "",
     "IMAGES:",
     editando
-      ? "- Image 1: crop of the CURRENT ART = the base. Keep it identical (layout, product positions and sizes, colors, logos, texts, backgrounds) except for the request."
+      ? "- Image 1: crop of the CURRENT ART (the art the designer clicked Edit on, NOT the Rogga template) = the base. Keep it identical (layout, product positions and sizes, colors, logos, texts, backgrounds) except for the request."
       : "- Image 1: crop of the Rogga template (layout to keep).",
   ];
   if (editando) {
@@ -384,7 +393,7 @@ export async function POST(request: Request) {
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("Falha ao gerar imagem.");
     console.log(`[gerar] ${modelo} ${w}x${h} uso:`, JSON.stringify(r.usage ?? {}));
-    return { buffer: Buffer.from(b64, "base64"), uso: r.usage, tamanho: `${w}x${h}` };
+    return { buffer: Buffer.from(b64, "base64"), uso: r.usage, tamanho: `${w}x${h}`, custoUsd: custoEmDolar(modelo, r.usage as Uso) };
   };
 
   // Se o modelo principal não estiver disponível (400/403/404), tenta o gpt-image-1.5
@@ -423,6 +432,7 @@ export async function POST(request: Request) {
           tempoMs: Date.now() - inicio,
           timestamp,
           uso: gerada.uso ? { ...gerada.uso, tamanho: gerada.tamanho } : undefined,
+          custoUsd: gerada.custoUsd,
         });
       } catch (err: unknown) {
         enviar({ tipo: "erro", error: err instanceof Error ? err.message : "Erro desconhecido." });

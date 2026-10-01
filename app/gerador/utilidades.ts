@@ -71,6 +71,12 @@ export async function ehPropostaRogga(src: string): Promise<boolean> {
   }
 }
 
+// Dólar usado para mostrar o custo de cada arte em reais: média de set/2026 (R$ 5,13)
+// + IOF de 3,5% do cartão internacional. Atualize se o dólar mudar muito.
+export const COTACAO_DOLAR = 5.31;
+export const emReais = (usd: number) =>
+  (usd * COTACAO_DOLAR).toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
 export const segundos = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s`;

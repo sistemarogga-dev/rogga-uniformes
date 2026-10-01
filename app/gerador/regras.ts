@@ -4,7 +4,7 @@
 // Regras de EDIÇÃO: usadas ao editar uma arte. As informações que mudam a cada arte —
 // cores medidas, quadros que podem mudar, papel de cada imagem — o servidor acrescenta
 // sozinho (app/api/gerar).
-export const REGRAS_EDICAO_PADRAO = `EDIT MODE: the result must be IDENTICAL to the current art, changing ONLY what the request asks.
+export const REGRAS_EDICAO_PADRAO = `EDIT MODE: the result must be IDENTICAL to the CURRENT ART (image 1 = the art the designer chose to edit), changing ONLY what the request asks. It must NOT look like the blank Rogga template ("LOGO AQUI" placeholders): keep this client's art.
 Keep unless the request says otherwise:
 - Logos: same design, letters, colors, size and position. Copy them from the original logo files; never redraw, simplify, translate or swap.
 - Product colors (use the measured hex codes).

@@ -14,6 +14,7 @@ export interface ArteGerada {
   tempoMs?: number; // quanto tempo a geração levou
   logosSrc?: string[]; // logos originais do cliente, reduzidos (reenviados nas edições)
   qualidade?: Qualidade; // qualidade usada na geração
+  custoUsd?: number; // custo estimado da geração na OpenAI (US$)
   antes?: string; // endereço da versão anterior (botão "Comparar")
 }
 

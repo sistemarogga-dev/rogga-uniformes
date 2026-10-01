@@ -15,7 +15,7 @@ import TelaSenha from "./componentes/TelaSenha";
 import Configuracoes from "./componentes/Configuracoes";
 import Comparacao from "./componentes/Comparacao";
 import TelaCheia from "./componentes/TelaCheia";
-import { type ImagemEnviada, mensagensLeves, miniatura, segundos, novoId, lerPreview, ehPropostaRogga } from "./utilidades";
+import { type ImagemEnviada, mensagensLeves, miniatura, segundos, emReais, COTACAO_DOLAR, novoId, lerPreview, ehPropostaRogga } from "./utilidades";
 
 export default function GeradorPage() {
   const [regras, setRegras] = useState(REGRAS_PADRAO);
@@ -171,7 +171,7 @@ export default function GeradorPage() {
   // Configurações lembradas no navegador
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
-    const re = localStorage.getItem("rogga-regras-edicao-v2");
+    const re = localStorage.getItem("rogga-regras-edicao-v3");
     if (re) setRegrasEdicao(re);
     const r = localStorage.getItem("rogga-regras-v3");
     if (r) setRegras(r);
@@ -179,7 +179,7 @@ export default function GeradorPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => { localStorage.setItem("rogga-regras-v3", regras); }, [regras]);
-  useEffect(() => { localStorage.setItem("rogga-regras-edicao-v2", regrasEdicao); }, [regrasEdicao]);
+  useEffect(() => { localStorage.setItem("rogga-regras-edicao-v3", regrasEdicao); }, [regrasEdicao]);
   useEffect(() => { localStorage.setItem("rogga-mascara", String(usarMascara)); }, [usarMascara]);
 
   // Progresso animado enquanto a imagem é gerada
@@ -382,7 +382,7 @@ export default function GeradorPage() {
       }
 
       // Resposta em linhas JSON (evento "final" com a arte ou "erro")
-      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number };
+      type Evento = { tipo: string; url?: string; error?: string; prompt?: string; logomarca?: string; timestamp?: number; custoUsd?: number };
       let final: Evento | null = null;
       const leitor = res.body.getReader();
       const dec = new TextDecoder();
@@ -406,7 +406,7 @@ export default function GeradorPage() {
         url: final.url, prompt: final.prompt || "", logomarca: final.logomarca || "Logomarca",
         vendedor: "",
         timestamp: final.timestamp || Date.now(),
-        tempoMs: Date.now() - inicio, logosSrc, qualidade,
+        tempoMs: Date.now() - inicio, logosSrc, qualidade, custoUsd: final.custoUsd,
         // versão anterior para o botão "Comparar"
         antes: editando ? (editando.caminho ? `/api/artes/imagem?p=${encodeURIComponent(editando.caminho)}` : editando.url) : undefined,
       };
@@ -932,6 +932,12 @@ export default function GeradorPage() {
                             )}
                             {m.arte.qualidade && (
                               <span className="text-[11px] text-gray-500 px-1" title="Qualidade da imagem">{m.arte.qualidade === "medium" ? "Medium" : "Low"}</span>
+                            )}
+                            {m.arte.custoUsd !== undefined && (
+                              <span className="text-[11px] text-gray-500 px-1"
+                                title={`Custo estimado na OpenAI: US$ ${m.arte.custoUsd.toFixed(4)} (dólar a R$ ${COTACAO_DOLAR.toFixed(2).replace(".", ",")} com IOF)`}>
+                                {emReais(m.arte.custoUsd)}
+                              </span>
                             )}
                             {m.arte.tempoMs !== undefined && (
                               <span className="flex items-center gap-1 text-[11px] text-gray-500 px-2" title="Tempo de geração">
